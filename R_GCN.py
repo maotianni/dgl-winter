@@ -67,7 +67,7 @@ class RelGraphConv(nn.Module):
             self.weight = nn.Parameter(th.Tensor(self.num_rels, self.in_feat, self.out_feat))
             nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain('relu'))
             # message func
-            self.message_func = self.basis_message_func
+            self.message_func = self.without_regular_message_func
             # raise ValueError("Regularizer must be either 'basis' or 'bdd'")
 
         # bias
