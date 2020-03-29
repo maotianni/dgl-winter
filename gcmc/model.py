@@ -7,7 +7,7 @@ from layers import GraphCovLayer, EmbeddingLayer, BilinearDecoder
 
 class Template(nn.Module):
     def __init__(self, u_num, v_num, in_dim, ins_dim, hid_dim, out_dim, num_of_ratings, num_of_bases,
-                 accum='sum', w_sharing=False, activation=None,
+                 norm='left', accum='sum', w_sharing=False, activation=None,
                  side_information=False, bias=False, dropout=0.0, use_cuda=False):
         super(Template, self).__init__()
         self.u_num = u_num
@@ -18,6 +18,7 @@ class Template(nn.Module):
         self.out_dim = out_dim
         self.num_of_ratings = num_of_ratings
         self.num_of_bases = num_of_bases
+        self.norm = norm
         self.accum = accum
         self.w_sharing = w_sharing
         self.activation = activation
@@ -62,7 +63,7 @@ class Template(nn.Module):
 class EncoderNDecoder(Template):
     def build_GConv_layer(self):
         return GraphCovLayer(self.u_num, self.v_num, self.in_dim, self.hid_dim, self.num_of_ratings,
-                             accum=self.accum, w_sharing=self.w_sharing, activation=self.activation,
+                             norm=self.norm, accum=self.accum, w_sharing=self.w_sharing, activation=self.activation,
                              dropout=self.dropout, use_cuda=self.use_cuda)
 
     def build_Emb_layer(self):
@@ -77,11 +78,11 @@ class EncoderNDecoder(Template):
 
 class GraphConvMatrixCompletion(nn.Module):
     def __init__(self, u_num, v_num, in_dim, ins_dim, hid_dim, out_dim, num_of_ratings, num_bases,
-                 accum='sum', w_sharing=False, activation=None,
+                 norm='left', accum='sum', w_sharing=False, activation=None,
                  side_information=False, bias=False, dropout=0.0, use_cuda=False):
         super(GraphConvMatrixCompletion, self).__init__()
         self.encoderNdecoder = EncoderNDecoder(u_num, v_num, in_dim, ins_dim, hid_dim, out_dim,
-                                               num_of_ratings, num_bases,
+                                               num_of_ratings, num_bases, norm=norm,
                                     accum=accum, w_sharing=w_sharing, activation=activation,
                                     side_information=side_information, bias=bias,
                                     dropout=dropout, use_cuda=use_cuda)
