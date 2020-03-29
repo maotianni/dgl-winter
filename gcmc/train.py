@@ -311,7 +311,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='GC-MC')
-    parser.add_argument("--validation", type=bool, default=True,
+    parser.add_argument("--validation", default=True, action='store_false',
                 help="use validation sets")
     parser.add_argument("--semi-param", type=float, default=0.05,
                 help="a semi-param in normalization")
@@ -327,11 +327,11 @@ if __name__ == '__main__':
                             help="n of w-sharing bases")
     parser.add_argument("--accum", type=str, default='stack',
                             help="method of accum")
-    parser.add_argument("--w-sharing", type=bool, default=True,
+    parser.add_argument("--w-sharing", default=True, action='store_false',
                 help="w-sharing")
-    parser.add_argument("--side-information", type=bool, default=True,
+    parser.add_argument("--side-information", default=True, action='store_false',
                 help="side-information")
-    parser.add_argument("--bias", type=bool, default=True,
+    parser.add_argument("--bias", default=True, action='store_false',
                 help="bias")
     parser.add_argument("--dropout", type=float, default=0.7,
                 help="dropout rate")
