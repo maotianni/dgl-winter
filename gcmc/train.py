@@ -6,6 +6,7 @@ import argparse
 import time
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 
 from model import GraphConvMatrixCompletion
 
@@ -100,10 +101,18 @@ def main(args):
         item_ci.append(g['{}'.format(i+1)].in_degrees())
         user_cj.append(g['{}'.format(i+1)].out_degrees())
         item_cj.append(g['rev{}'.format(i+1)].out_degrees())
-    user_ci = th.Tensor(np.sqrt(1 / (sum(user_ci).numpy()+semi_param).astype('float64')))
-    item_ci = th.Tensor(np.sqrt(1 / (sum(item_ci).numpy()+semi_param).astype('float64')))
-    user_cj = th.Tensor(np.sqrt(1 / (sum(user_cj).numpy()+semi_param).astype('float64')))
-    item_cj = th.Tensor(np.sqrt(1 / (sum(item_cj).numpy()+semi_param).astype('float64')))
+    uci = np.sqrt(1 / (sum(user_ci).numpy()).astype('float64'))
+    uci[uci == np.inf] = 1
+    vci = np.sqrt(1 / (sum(item_ci).numpy()).astype('float64'))
+    vci[vci == np.inf] = 1
+    ucj = np.sqrt(1 / (sum(user_cj).numpy()).astype('float64'))
+    ucj[ucj == np.inf] = 1
+    vcj = np.sqrt(1 / (sum(item_cj).numpy()).astype('float64'))
+    vcj[vcj == np.inf] = 1
+    user_ci = th.Tensor(uci)
+    item_ci = th.Tensor(vci)
+    user_cj = th.Tensor(ucj)
+    item_cj = th.Tensor(vcj)
     g.nodes['user'].data.update({'ci': user_ci, 'cj': user_cj})
     g.nodes['item'].data.update({'ci': item_ci, 'cj': item_cj})
 
@@ -136,10 +145,18 @@ def main(args):
         item_ci_test.append(g['{}'.format(i+1)].in_degrees())
         user_cj_test.append(g['{}'.format(i+1)].out_degrees())
         item_cj_test.append(g['rev{}'.format(i+1)].out_degrees())
-    user_ci_test = th.Tensor(np.sqrt(1 / (sum(user_ci_test).numpy()+semi_param).astype('float64')))
-    item_ci_test = th.Tensor(np.sqrt(1 / (sum(item_ci_test).numpy()+semi_param).astype('float64')))
-    user_cj_test = th.Tensor(np.sqrt(1 / (sum(user_cj_test).numpy()+semi_param).astype('float64')))
-    item_cj_test = th.Tensor(np.sqrt(1 / (sum(item_cj_test).numpy()+semi_param).astype('float64')))
+    uci_test = np.sqrt(1 / (sum(user_ci_test).numpy()).astype('float64'))
+    uci_test[uci_test == np.inf] = 1
+    vci_test = np.sqrt(1 / (sum(item_ci_test).numpy()).astype('float64'))
+    vci_test[vci_test == np.inf] = 1
+    ucj_test = np.sqrt(1 / (sum(user_cj_test).numpy()).astype('float64'))
+    ucj_test[ucj_test == np.inf] = 1
+    vcj_test = np.sqrt(1 / (sum(item_cj_test).numpy()).astype('float64'))
+    vcj_test[vcj_test == np.inf] = 1
+    user_ci_test = th.Tensor(uci_test)
+    item_ci_test = th.Tensor(vci_test)
+    user_cj_test = th.Tensor(ucj_test)
+    item_cj_test = th.Tensor(vcj_test)
     g_test.nodes['user'].data.update({'ci': user_ci_test, 'cj': user_cj_test})
     g_test.nodes['item'].data.update({'ci': item_ci_test, 'cj': item_cj_test})
 
@@ -173,9 +190,10 @@ def main(args):
     side_information = args.side_information
     bias = args.bias
     dropout = args.dropout
+    norm = args.norm
 
     model = GraphConvMatrixCompletion(u_num, v_num, 40, n_ins, n_hidden, n_z, 5, n_bases,
-                                      accum=accum, w_sharing=w_sharing,
+                                      norm=norm, accum=accum, w_sharing=w_sharing,
                                       activation=F.relu, side_information=side_information, bias=bias,
                                       dropout=dropout, use_cuda=use_cuda)
     if use_cuda:
@@ -192,6 +210,9 @@ def main(args):
     forward_time = []
     backward_time = []
     model.train()
+
+    # plot the experiment
+    t_loss, t_rmse, v_loss, v_rmse = [], [], [], []
 
     r = th.Tensor([1, 2, 3, 4, 5])
     loss_function = nn.MSELoss()
@@ -230,6 +251,10 @@ def main(args):
         print("Train Loss: {:.4f} | Train RMSE: {:.4f} | Validation Loss: {:.4f} | Validation RMSE: {:.4f}".
               format(loss.item(), train_rmse.item(), val_loss.item(), val_rmse.item()))
 
+        # data for plots
+        t_loss.append(loss.item()), t_rmse.append(train_rmse.item())
+        v_loss.append(val_loss.item()), v_rmse.append(val_rmse.item())
+
     print()
 
     model.eval()
@@ -248,9 +273,45 @@ def main(args):
     print("Mean backward time: {:4f}".format(np.mean(backward_time[len(backward_time) // 4:])))
 
 
+    # plots!!!
+    e_s = list(range(n_epochs))
+    plt.figure()
+    plt.plot(e_s, t_loss, label='train loss')
+    plt.plot(e_s, v_loss, label='val loss')
+    plt.legend()
+    plt.xlabel('epoch', fontsize=16)
+    plt.xticks(fontsize=16)
+    plt.ylabel('loss', fontsize=16)
+    plt.yticks(fontsize=16)
+    plt.title('Cross Entropy Loss')
+    plt.savefig('Cross Entropy Loss.png')
+    plt.close()
+
+    plt.figure()
+    plt.plot(e_s, t_rmse, label='train rmse')
+    plt.plot(e_s, v_rmse, label='val rmse')
+    plt.legend()
+    plt.xlabel('epoch', fontsize=16)
+    plt.xticks(fontsize=16)
+    plt.ylabel('loss', fontsize=16)
+    plt.yticks(fontsize=16)
+    plt.title('RMSE Loss')
+    plt.savefig('RMSE Loss.png')
+    plt.close()
+
+    # test result!!!
+    f = open('test.txt', 'w')
+    f.write('{}'.format(args))
+    f.write('\n\n')
+    f.write("Test Loss: {:.4f} | Test RMSE: {:.4f}".format(test_loss.item(), test_rmse.item()))
+    f.write('\n\n')
+    f.write("Mean forward time: {:4f}\n".format(np.mean(forward_time[len(forward_time) // 4:])))
+    f.write("Mean backward time: {:4f}".format(np.mean(backward_time[len(backward_time) // 4:])))
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='GC-MC')
-    parser.add_argument("--validation", default=True, action='store_true',
+    parser.add_argument("--validation", type=bool, default=True,
                 help="use validation sets")
     parser.add_argument("--semi-param", type=float, default=0.05,
                 help="a semi-param in normalization")
@@ -266,11 +327,11 @@ if __name__ == '__main__':
                             help="n of w-sharing bases")
     parser.add_argument("--accum", type=str, default='stack',
                             help="method of accum")
-    parser.add_argument("--w-sharing", default=True, action='store_true',
+    parser.add_argument("--w-sharing", type=bool, default=True,
                 help="w-sharing")
-    parser.add_argument("--side-information", default=True, action='store_true',
+    parser.add_argument("--side-information", type=bool, default=True,
                 help="side-information")
-    parser.add_argument("--bias", default=True, action='store_true',
+    parser.add_argument("--bias", type=bool, default=True,
                 help="bias")
     parser.add_argument("--dropout", type=float, default=0.7,
                 help="dropout rate")
@@ -280,6 +341,8 @@ if __name__ == '__main__':
                 help="L2 norm")
     parser.add_argument("--n-epochs", type=int, default=1000,
                 help="number of epochs")
+    parser.add_argument("--norm", type=str, default='left',
+                        help="left or symmetric")
 
     args = parser.parse_args()
     print(args)
