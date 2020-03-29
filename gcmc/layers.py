@@ -11,6 +11,7 @@ class GraphCovLayer(nn.Module):
                  in_feat,
                  hid_feat,
                  num_of_ratings,
+                 norm='left',
                  accum='sum',
                  w_sharing=False,
                  activation=None,
@@ -23,6 +24,7 @@ class GraphCovLayer(nn.Module):
         self.hid_feat = hid_feat
         self.num_of_ratings = num_of_ratings
         self.w_sharing = w_sharing
+        self.norm = norm
         # stack
         self.accum = accum
         if self.accum == 'stack':
@@ -49,9 +51,10 @@ class GraphCovLayer(nn.Module):
         for i in range(5):
             x_u = th.matmul(g.nodes['user'].data['x'], self.weight[i])
             x_v = th.matmul(g.nodes['item'].data['x'], self.weight[i])
-            # left norm and dropout
-            x_u = x_u * g.nodes['user'].data['cj'].view(self.u_num, 1)
-            x_v = x_v * g.nodes['item'].data['cj'].view(self.v_num, 1)
+            # right norm and dropout
+            if self.norm == 'symmetric':
+                x_u = x_u * g.nodes['user'].data['cj'].view(self.u_num, 1)
+                x_v = x_v * g.nodes['item'].data['cj'].view(self.v_num, 1)
             if self.dropout:
                 x_u = self.dropout(x_u)
                 x_v = self.dropout(x_v)
@@ -64,9 +67,13 @@ class GraphCovLayer(nn.Module):
         h_v = g.nodes['item'].data['h'].view(self.v_num, -1)
         # print('h_u:{}'.format(sum(sum(th.isnan(h_u)))))
         # print('h_v:{}'.format(sum(sum(th.isnan(h_v)))))
-        # right norm
-        h_u = h_u * g.nodes['user'].data['ci'].view(self.u_num, 1)
-        h_v = h_v * g.nodes['item'].data['ci'].view(self.v_num, 1)
+        # left norm
+        if self.norm == 'symmetric':
+            h_u = h_u * g.nodes['user'].data['ci'].view(self.u_num, 1)
+            h_v = h_v * g.nodes['item'].data['ci'].view(self.v_num, 1)
+        else:
+            h_u = h_u * g.nodes['user'].data['ci'].view(self.u_num, 1) * g.nodes['user'].data['ci'].view(self.u_num, 1)
+            h_v = h_v * g.nodes['item'].data['ci'].view(self.v_num, 1) * g.nodes['item'].data['ci'].view(self.v_num, 1)
         # print('h_u, right norm:{}'.format(sum(sum(th.isnan(h_u)))))
         # print('h_v, right norm:{}'.format(sum(sum(th.isnan(h_v)))))
         if self.activation:
