@@ -212,4 +212,3 @@ class BilinearDecoder(nn.Module):
         # print('P:{}'.format(sum(sum(sum(th.isnan(P))))))
         temp = None
         return P, temp
-
