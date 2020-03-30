@@ -63,7 +63,7 @@ def main(args):
     # validation
     validation = args.validation
     if validation:
-        train_rating_info = all_train_rating_info.sample(frac=0.8)
+        train_rating_info = all_train_rating_info.sample(frac=0.8, random_state=35)
         rowlist = []
         for indexs in train_rating_info.index:
             rowlist.append(indexs)
@@ -74,7 +74,6 @@ def main(args):
 
 
     # create graphs
-    semi_param = args.semi_param
     # train
     edge_u_train = train_rating_info.user_id.values - 1
     edge_v_train = train_rating_info.movie_id.values - 1
@@ -226,8 +225,11 @@ def main(args):
         if use_cuda:
             logits_partial = logits_partial.cuda()
         loss = F.cross_entropy(logits_partial, (edge_r_train - 1).long())
+        M_partial = th.matmul(r, logits_partial.T)
+        train_mse = loss_function(M_partial, edge_r_train)
+        train_rmse = train_mse.sqrt()
         t1 = time.time()
-        loss.backward(retain_graph=True)
+        train_rmse.backward(retain_graph=True)
         optimizer.step()
         t2 = time.time()
 
@@ -236,9 +238,7 @@ def main(args):
         print("Epoch {:05d} | Train Forward Time(s) {:.4f} | Backward Time(s) {:.4f}".
               format(epoch, forward_time[-1], backward_time[-1]))
 
-        M_partial = th.matmul(r, logits_partial.T)
-        train_mse = loss_function(M_partial, edge_r_train)
-        train_rmse = train_mse.sqrt()
+
 
         logits_partial_v = logits[:, edge_u_val, edge_v_val].T
         if use_cuda:
@@ -313,8 +313,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='GC-MC')
     parser.add_argument("--validation", default=True, action='store_false',
                 help="use validation sets")
-    parser.add_argument("--semi-param", type=float, default=0.05,
-                help="a semi-param in normalization")
     parser.add_argument("--gpu", type=int, default=-1,
                 help="gpu")
     parser.add_argument("--n-ins", type=int, default=10,
