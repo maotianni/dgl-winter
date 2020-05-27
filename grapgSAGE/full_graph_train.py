@@ -11,6 +11,7 @@ import time
 def load_data():
     # 导入数据：分隔符为空格
     raw_data = pd.read_csv('cora/cora.content',sep = '\t',header = None)
+    num_nodes = raw_data.shape[0]
     # 将论文的编号转[0,2707]
     a = list(raw_data.index)
     b = list(raw_data[0])
@@ -28,9 +29,13 @@ def load_data():
     for i ,j in zip(raw_data_cites[0],raw_data_cites[1]):
         x.append(map[i])
         y.append(map[j])  #替换论文编号为[0,2707]
-    idx_train = range(140)
-    idx_val = range(200, 500)
-    idx_test = range(500, 1500)
+    #idx_train = range(140)
+    #idx_val = range(200, 500)
+    #idx_test = range(500, 1500)
+    rand_indices = np.random.permutation(num_nodes)
+    idx_test = rand_indices[:1000]
+    idx_val = rand_indices[1000:1500]
+    idx_train = list(rand_indices[1500:])
 
     src = np.array(x)
     dst = np.array(y)
@@ -60,11 +65,12 @@ g.add_edges(src, dst)
 g.add_edges(dst, src)
 g.ndata['x'] = features
 
-gpu = -1
+gpu = 0
 use_cuda = gpu >= 0 and torch.cuda.is_available()
 if use_cuda:
     torch.cuda.set_device(gpu)
     g.to(torch.device('cuda:{}'.format(gpu)))
+    target_class = target_class.cuda()
     train_id = train_id.cuda()
     val_id = val_id.cuda()
     test_id = test_id.cuda()
@@ -74,7 +80,7 @@ n_classes = labels.shape[1]
 n_edges = g.number_of_edges()
 
 #model
-model = FullGraphSAGE(in_feats, 16, n_classes, 3, bias=True, aggregator='gcn', activation=F.relu, dropout=0.5)
+model = FullGraphSAGE(in_feats, 16, n_classes, 3, bias=True, aggregator='lstm', activation=F.relu, dropout=0.5)
 if use_cuda:
     model.cuda()
 loss_fcn = torch.nn.CrossEntropyLoss()
@@ -97,9 +103,10 @@ def evaluate(model, g, target_class, id):
 print("start training...")
 forward_time = []
 backward_time = []
-model.train()
+# model.train()
 
 for epoch in range(200):
+    model.train()
     # forward
     optimizer.zero_grad()
     t0 = time.time()
