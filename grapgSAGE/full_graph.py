@@ -41,9 +41,9 @@ class FullGraphSAGE(nn.Module):
 
         if self.aggregator == 'pool':
             self.weight_pool_in = nn.Parameter(torch.Tensor(self.in_feat, self.in_feat))
-            nn.init.xavier_uniform_(self.weight_gcn_in, gain=nn.init.calculate_gain('relu'))
+            nn.init.xavier_uniform_(self.weight_pool_in, gain=nn.init.calculate_gain('relu'))
             self.weight_pool_hid = nn.Parameter(torch.Tensor(self.hid_feat, self.hid_feat))
-            nn.init.xavier_uniform_(self.weight_gcn_hid, gain=nn.init.calculate_gain('relu'))
+            nn.init.xavier_uniform_(self.weight_pool_hid, gain=nn.init.calculate_gain('relu'))
             if self.bias:
                 self.bias_in = nn.Parameter(torch.Tensor(self.in_feat))
                 nn.init.zeros_(self.bias_in)
@@ -80,7 +80,7 @@ class FullGraphSAGE(nn.Module):
                 if self.activation:
                     h = self.activation(h, inplace=False)
                 norm = torch.norm(h, dim=1)
-                h = h / norm.unsqueeze(-1)
+                h = h / (norm.unsqueeze(-1) + 0.05)
                 g.srcdata['h'] = h
                 g.dstdata['h'] = h
             elif i == self.K - 1:
@@ -91,7 +91,7 @@ class FullGraphSAGE(nn.Module):
                 h = torch.matmul(torch.cat([g.srcdata['h'], h_neigh], dim=1), self.weight_out)
 
                 norm = torch.norm(h, dim=1)
-                h = h / norm.unsqueeze(-1)
+                h = h / (norm.unsqueeze(-1) + 0.05)
                 g.ndata['z'] = h
             else:
                 g.srcdata['h'] = torch.matmul(g.srcdata['h'], self.weight_gcn_hid)
@@ -102,7 +102,7 @@ class FullGraphSAGE(nn.Module):
                 if self.activation:
                     h = self.activation(h, inplace=False)
                 norm = torch.norm(h, dim=1)
-                h = h / norm.unsqueeze(-1)
+                h = h / (norm.unsqueeze(-1) + 0.05)
                 g.srcdata['h'] = h
                 g.dstdata['h'] = h
         return g
@@ -119,7 +119,7 @@ class FullGraphSAGE(nn.Module):
                 if self.activation:
                     h = self.activation(h, inplace=False)
                 norm = torch.norm(h, dim=1)
-                h = h / norm.unsqueeze(-1)
+                h = h / (norm.unsqueeze(-1) + 0.05)
                 g.srcdata['h'] = h
             elif i == self.K - 1:
                 g.update_all(fn.copy_src('h', 'm'), fn.mean('m', 'neigh'))
@@ -127,7 +127,7 @@ class FullGraphSAGE(nn.Module):
                 h = torch.matmul(torch.cat([g.srcdata['h'], h_neigh], dim=1), self.weight_out)
 
                 norm = torch.norm(h, dim=1)
-                h = h / norm.unsqueeze(-1)
+                h = h / (norm.unsqueeze(-1) + 0.05)
                 g.ndata['z'] = h
             else:
                 g.update_all(fn.copy_src('h', 'm'), fn.mean('m', 'neigh'))
@@ -136,7 +136,7 @@ class FullGraphSAGE(nn.Module):
                 if self.activation:
                     h = self.activation(h, inplace=False)
                 norm = torch.norm(h, dim=1)
-                h = h / norm.unsqueeze(-1)
+                h = h / (norm.unsqueeze(-1) + 0.05)
                 g.srcdata['h'] = h
         return g
 
@@ -150,7 +150,7 @@ class FullGraphSAGE(nn.Module):
                 if self.activation:
                     h = self.activation(h, inplace=False)
                 norm = torch.norm(h, dim=1)
-                h = h / norm.unsqueeze(-1)
+                h = h / (norm.unsqueeze(-1) + 0.05)
                 g.srcdata['h'] = h
             elif i == self.K - 1:
                 g.update_all(fn.copy_src('h', 'm'), self.lstm_reducer_hid)
@@ -158,7 +158,7 @@ class FullGraphSAGE(nn.Module):
                 h = torch.matmul(torch.cat([g.srcdata['h'], h_neigh], dim=1), self.weight_out)
 
                 norm = torch.norm(h, dim=1)
-                h = h / norm.unsqueeze(-1)
+                h = h / (norm.unsqueeze(-1) + 0.05)
                 g.ndata['z'] = h
             else:
                 g.update_all(fn.copy_src('h', 'm'), self.lstm_reducer_hid)
@@ -167,7 +167,7 @@ class FullGraphSAGE(nn.Module):
                 if self.activation:
                     h = self.activation(h, inplace=False)
                 norm = torch.norm(h, dim=1)
-                h = h / norm.unsqueeze(-1)
+                h = h / (norm.unsqueeze(-1) + 0.05)
                 g.srcdata['h'] = h
         return g
 
@@ -186,19 +186,19 @@ class FullGraphSAGE(nn.Module):
                 if self.activation:
                     h = self.activation(h, inplace=False)
                 norm = torch.norm(h, dim=1)
-                h = h / norm.unsqueeze(-1)
+                h = h / (norm.unsqueeze(-1) + 0.05)
                 g.srcdata['h'] = h
             elif i == self.K - 1:
                 h = torch.matmul(g.srcdata['h'], self.weight_pool_hid)
                 if self.bias:
-                    h = h + self.bias_out
+                    h = h + self.bias_hid
                 g.srcdata['h'] = h
                 g.update_all(fn.copy_src('h', 'm'), fn.max('m', 'neigh'))
                 h_neigh = g.dstdata['neigh']
                 h = torch.matmul(torch.cat([g.srcdata['h'], h_neigh], dim=1), self.weight_out)
 
                 norm = torch.norm(h, dim=1)
-                h = h / norm.unsqueeze(-1)
+                h = h / (norm.unsqueeze(-1) + 0.05)
                 g.ndata['z'] = h
             else:
                 h = torch.matmul(g.srcdata['h'], self.weight_pool_hid)
@@ -211,7 +211,7 @@ class FullGraphSAGE(nn.Module):
                 if self.activation:
                     h = self.activation(h, inplace=False)
                 norm = torch.norm(h, dim=1)
-                h = h / norm.unsqueeze(-1)
+                h = h / (norm.unsqueeze(-1) + 0.05)
                 g.srcdata['h'] = h
         return g
 
