@@ -13,10 +13,10 @@ from sample_graphSAGE import Sample, GraphSAGE
 
 def main(args):
     # graph
-    coo_adj = sp.load_npz("reddit/reddit_graph.npz")
+    coo_adj = sp.load_npz("reddit_self_loop/reddit_self_loop_graph.npz")
     graph = DGLGraph(coo_adj, readonly=True)
     # features and labels
-    reddit_data = np.load("reddit/reddit_data.npz")
+    reddit_data = np.load("reddit_self_loop/reddit_data.npz")
     features = reddit_data["feature"]
     labels = reddit_data["label"]
     num_labels = 41
@@ -65,8 +65,9 @@ def main(args):
     dropout_r = args.dropout
     agg = args.agg
     bias = args.bias
+    norm = args.norm
     model = GraphSAGE(in_feats, num_hid, num_labels, ks, bias=bias,
-                      aggregator=agg,activation=F.relu, dropout=dropout_r)
+                      aggregator=agg, activation=F.relu, norm=norm, dropout=dropout_r, use_cuda=use_cuda)
     if use_cuda:
         model.cuda()
     loss_fcn = torch.nn.CrossEntropyLoss()
@@ -164,6 +165,8 @@ if __name__ == '__main__':
         help="Number of sampling processes. Use 0 for no extra process.")
     argparser.add_argument("--bias", default=True, action='store_false',
                         help="bias")
+    argparser.add_argument("--norm", default=False, action='store_true',
+                           help="norm")
     args = argparser.parse_args()
     print(args)
     main(args)
