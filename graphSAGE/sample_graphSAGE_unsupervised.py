@@ -211,11 +211,19 @@ class GraphSAGE(nn.Module):
                 if self.use_cuda:
                     h = h.cuda()              # 下一层时使用了上一层的y，y默认为cpu()
                 if self.aggregator == 'pool':
-                    h = torch.matmul(h, self.weight_pool_in)
-                    if self.bias:
-                        h = h + self.bias_in
+                    if i == 0:
+                        h = torch.matmul(h, self.weight_pool_in)
+                        if self.bias:
+                            h = h + self.bias_in
+                    else:
+                        h = torch.matmul(h, self.weight_pool_hid)
+                        if self.bias:
+                            h = h + self.bias_hid
                 if self.aggregator == 'gcn':
-                    block.srcdata['h'] = torch.matmul(h, self.weight_gcn_in)
+                    if i == 0:
+                        block.srcdata['h'] = torch.matmul(h, self.weight_gcn_in)
+                    else:
+                        block.srcdata['h'] = torch.matmul(h, self.weight_gcn_hid)
                 else:
                     block.srcdata['h'] = h
                 block.dstdata['h'] = h[:block.number_of_dst_nodes()]
