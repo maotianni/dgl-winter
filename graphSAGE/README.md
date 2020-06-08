@@ -6,7 +6,7 @@
 * 0.4770
 
 * python3 sample_graphSAGE_train.py --num-epochs 30 --agg pool
-* 0.5809
+* 0.6506
 
 * python3 sample_graphSAGE_train.py --num-epochs 30 --agg lstm
 *
