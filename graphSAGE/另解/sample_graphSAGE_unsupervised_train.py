@@ -151,31 +151,32 @@ def main(args):
                             epoch, step, loss.item(), np.mean(iter_pos[3:]),
                             np.mean(iter_neg[3:]), np.mean(iter_d[3:]), np.mean(iter_t[3:])))
             time_step = time.time()
-            if step % eval_every == 0:
-                print('\n')
-                print('Eval-ing...')
-                time_ev_0 = time.time()
-                eval_acc, test_acc = evaluation(model, g, labels, train_nid, val_nid, test_nid, batch_size)
-                if eval_acc > best_eval_acc:
-                    best_eval_acc = eval_acc
-                    best_test_acc = test_acc
-                time_ev_1 = time.time()
-                print('Eval Acc {:.4f} | Eval Time(s): {:.4f}'.format(eval_acc, time_ev_1 - time_ev_0))
-                print('Best Eval Acc {:.4f} | Best Test Acc {:.4f}'.format(best_eval_acc, best_test_acc))
-                time_step = time.time()
+        if epoch % eval_every == 0:
+            print('\n')
+            print('Eval-ing...')
+            time_ev_0 = time.time()
+            eval_acc, test_acc = evaluation(model, g, labels, train_nid, val_nid, test_nid, batch_size)
+            if eval_acc > best_eval_acc:
+                best_eval_acc = eval_acc
+                best_test_acc = test_acc
+            time_ev_1 = time.time()
+            print('Eval Acc {:.4f} | Eval Time(s): {:.4f}'.format(eval_acc, time_ev_1 - time_ev_0))
+            print('Best Eval Acc {:.4f} | Best Test Acc {:.4f}'.format(best_eval_acc, best_test_acc))
+            # time_step = time.time()
 
         time_epoch_1 = time.time()
         print('Epoch Time(s): {:.4f}'.format(time_epoch_1 - time_epoch_0))
-    print('\n')
-    print('Eval-ing...')
-    time_ev_0 = time.time()
-    eval_acc, test_acc = evaluation(model, g, labels, train_nid, val_nid, test_nid, batch_size)
-    if eval_acc > best_eval_acc:
-        best_eval_acc = eval_acc
-        best_test_acc = test_acc
-    time_ev_1 = time.time()
-    print('Eval Acc {:.4f} | Eval Time(s): {:.4f}'.format(eval_acc, time_ev_1 - time_ev_0))
-    print('Best Eval Acc {:.4f} | Best Test Acc {:.4f}'.format(best_eval_acc, best_test_acc))
+    if eval_every != 1:
+        print('\n')
+        print('Eval-ing...')
+        time_ev_0 = time.time()
+        eval_acc, test_acc = evaluation(model, g, labels, train_nid, val_nid, test_nid, batch_size)
+        if eval_acc > best_eval_acc:
+            best_eval_acc = eval_acc
+            best_test_acc = test_acc
+        time_ev_1 = time.time()
+        print('Eval Acc {:.4f} | Eval Time(s): {:.4f}'.format(eval_acc, time_ev_1 - time_ev_0))
+        print('Best Eval Acc {:.4f} | Best Test Acc {:.4f}'.format(best_eval_acc, best_test_acc))
     print('\n')
     print('Finish!')
 
@@ -189,8 +190,8 @@ if __name__ == '__main__':
     argparser.add_argument('--fan-out', type=str, default='10,25')
     argparser.add_argument('--agg', type=str, default='mean')
     argparser.add_argument('--batch-size', type=int, default=1000)
-    argparser.add_argument('--log-every', type=int, default=10)
-    argparser.add_argument('--eval-every', type=int, default=30)
+    argparser.add_argument('--log-every', type=int, default=20)
+    argparser.add_argument('--eval-every', type=int, default=1)
     argparser.add_argument('--lr', type=float, default=0.003)
     argparser.add_argument('--dropout', type=float, default=0.5)
     argparser.add_argument('--num-neg', type=int, default=1)
