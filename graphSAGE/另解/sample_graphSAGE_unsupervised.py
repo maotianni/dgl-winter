@@ -35,16 +35,16 @@ class Sample(object):
         n_nodes = len(ids)
         n_ids = torch.LongTensor(np.asarray(ids))
         out_degrees = self.g.out_degrees(n_ids)
-        heads = torch.cat([torch.ones(out_degrees[i] if out_degrees[i] < 20
-                                      else 20).long() * n_ids[i] for i in range(n_nodes)])
+        heads = torch.cat([torch.ones(out_degrees[i] if out_degrees[i] < 10
+                                      else 10).long() * n_ids[i] for i in range(n_nodes)])
         cat = []
         for x in n_ids:
-            if self.g.successors(x).shape[0] < 20:
+            if self.g.successors(x).shape[0] < 10:
                 cat.append(self.g.successors(x))
             else:
                 suc = self.g.successors(x)
                 wei = self.weights[suc]
-                res_id = wei.multinomial(20)
+                res_id = wei.multinomial(10)
                 res = suc[res_id]
                 cat.append(res)
         tails = torch.cat(cat)
@@ -60,11 +60,13 @@ class Sample(object):
         B = []
         for s in self.fanout:
             nf = sample_neighbors(self.g, nodes=ids, fanout=s, replace=True)      # 返回采样后的图，节点不变，边仅保留采样到的
+            '''
             _, _, edge_ids = nf.edge_ids(
                 torch.cat([heads, tails, neg_heads, neg_tails]),
                 torch.cat([tails, heads, neg_tails, neg_heads]),
                 return_uv=True)
             nf = dgl.remove_edges(nf, edge_ids)          # 用于计算损失函数的边剔除，前向传播用剩下的边
+            '''
             b = dgl.to_block(nf, ids)        # 转为二部图，可以方便读取src和dst节点，将后一层节点作为dst
             ids = b.srcdata[dgl.NID]        # 二部图源节点作为前一层的ids
             B.insert(0, b)                  # 插入到列表最前
@@ -285,3 +287,4 @@ class GraphSAGE(nn.Module):
         g = self.full(g, batch_size)
         z = g.ndata['z']
         return z
+
