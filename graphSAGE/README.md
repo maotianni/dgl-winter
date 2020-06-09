@@ -13,4 +13,4 @@
 
 ## Unsupervised Learning GraphSAGE
 * python3 sample_graphSAGE_unsupervised_train.py （另解）
-* 0.9241
+* 0.9260
