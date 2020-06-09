@@ -34,8 +34,20 @@ class Sample(object):
     def obtain_Bs(self, ids):
         n_nodes = len(ids)
         n_ids = torch.LongTensor(np.asarray(ids))
-        heads = torch.cat([torch.ones(self.g.out_degrees(n_ids)[i]).long() * n_ids[i] for i in range(n_nodes)])
-        tails = torch.cat([self.g.successors(x) for x in n_ids])
+        out_degrees = self.g.out_degrees(n_ids)
+        heads = torch.cat([torch.ones(out_degrees[i] if out_degrees[i] < 20
+                                      else 20).long() * n_ids[i] for i in range(n_nodes)])
+        cat = []
+        for x in n_ids:
+            if self.g.successors(x).shape[0] < 20:
+                cat.append(self.g.successors(x))
+            else:
+                suc = self.g.successors(x)
+                wei = self.weights[suc]
+                res_id = wei.multinomial(20)
+                res = suc[res_id]
+                cat.append(res)
+        tails = torch.cat(cat)
 
         n_edges = tails.shape[0]
         neg_tails = self.weights.multinomial(self.num_negs * n_edges, replacement=True)
