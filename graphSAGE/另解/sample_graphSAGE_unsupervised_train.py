@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from sklearn import metrics
 from sklearn.linear_model import LogisticRegression
+# from pyinstrument import Profiler
 import time
 import argparse
 from sample_graphSAGE_unsupervised import Unsuper_Cross_Entropy, Sample, GraphSAGE
@@ -60,6 +61,14 @@ def main(args):
     # train_ids = torch.LongTensor(np.arange(g.number_of_edges()))
     dataloader = DataLoader(dataset=train_nid.numpy(), batch_size=batch_size, collate_fn=sampler.obtain_Bs,
             shuffle=True, drop_last=False, num_workers=num_workers)
+    #print('Loading...')
+    #t0 = time.time()
+    #DLoaders = []
+    #for step, (pos_graph, neg_graph, blocks) in enumerate(dataloader):
+        #DLoaders.append((step, (pos_graph, neg_graph, blocks)))
+        #t1 = time.time()
+        #print('Step {} | {} s'.format(step, t1-t0))
+        #t0 = time.time()
 
     # 设定模型
     num_hid = args.num_hidden
@@ -91,7 +100,11 @@ def main(args):
         clf.fit(logits[train_nids], labels[train_nid])
 
         pred = clf.predict(logits)
-
+        '''
+        pred = torch.argmax(logits, dim=1)
+        f1_micro_eval = ((pred[val_nids] == labels[val_nids]).float().sum() / pred[val_nids].shape[0]).item()
+        f1_micro_test = ((pred[test_nids] == labels[test_nids]).float().sum() / pred[test_nids].shape[0]).item()
+        '''
         f1_micro_eval = metrics.f1_score(labels[val_nids], pred[val_nids], average='micro')
         f1_micro_test = metrics.f1_score(labels[test_nids], pred[test_nids], average='micro')
         return f1_micro_eval, f1_micro_test
@@ -118,6 +131,7 @@ def main(args):
         time_epoch_0 = time.time()
         time_step = time.time()
         for step, (pos_graph, neg_graph, blocks) in enumerate(dataloader):
+        #for (step, (pos_graph, neg_graph, blocks)) in DLoaders:
             input_nodes = blocks[0].srcdata[dgl.NID]
             batch_inputs = g.ndata['features'][input_nodes]
             if use_cuda:
@@ -137,6 +151,7 @@ def main(args):
             iter_neg.append(edge_neg / (time_train - time_step))
             iter_d.append(time_load - time_step)
             iter_t.append(time_train - time_load)
+
             if step % log_every == 0:
                 if step == 0:
                     print(
@@ -150,7 +165,11 @@ def main(args):
                         'Speed (samples/sec) {:.4f} & {:.4f} | Load Time(sec) {:.4f} | Train Time(sec) {:.4f}'.format(
                             epoch, step, loss.item(), np.mean(iter_pos[3:]),
                             np.mean(iter_neg[3:]), np.mean(iter_d[3:]), np.mean(iter_t[3:])))
+
             time_step = time.time()
+            #if step == 2:
+                #break
+
         if epoch % eval_every == 0:
             print('\n')
             print('Eval-ing...')
@@ -162,7 +181,9 @@ def main(args):
             time_ev_1 = time.time()
             print('Eval Acc {:.4f} | Eval Time(s): {:.4f}'.format(eval_acc, time_ev_1 - time_ev_0))
             print('Best Eval Acc {:.4f} | Best Test Acc {:.4f}'.format(best_eval_acc, best_test_acc))
-            # time_step = time.time()
+            time_step = time.time()
+            #if epoch == 1:
+                #break
 
         time_epoch_1 = time.time()
         print('Epoch Time(s): {:.4f}'.format(time_epoch_1 - time_epoch_0))
@@ -190,7 +211,7 @@ if __name__ == '__main__':
     argparser.add_argument('--fan-out', type=str, default='10,25')
     argparser.add_argument('--agg', type=str, default='mean')
     argparser.add_argument('--batch-size', type=int, default=1000)
-    argparser.add_argument('--log-every', type=int, default=20)
+    argparser.add_argument('--log-every', type=int, default=5)
     argparser.add_argument('--eval-every', type=int, default=1)
     argparser.add_argument('--lr', type=float, default=0.003)
     argparser.add_argument('--dropout', type=float, default=0.5)
@@ -203,4 +224,9 @@ if __name__ == '__main__':
                            help="norm")
     args = argparser.parse_args()
     print(args)
+    #profiler = Profiler()
+    #profiler.start()
     main(args)
+    #profiler.stop()
+    #print(profiler.output_text(unicode=True, color=True))
+
