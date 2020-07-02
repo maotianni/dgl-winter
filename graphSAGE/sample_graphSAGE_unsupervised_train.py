@@ -1,4 +1,5 @@
 import scipy.sparse as sp
+import pandas as pd
 import numpy as np
 import dgl
 from dgl import DGLGraph
@@ -8,9 +9,12 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from sklearn import metrics
 from sklearn.linear_model import LogisticRegression
+import tqdm
 import time
 import argparse
+from pyinstrument import Profiler
 from sample_graphSAGE_unsupervised import Unsuper_Cross_Entropy, Sample, GraphSAGE
+from utils import LR_classification, Link_Prediction
 
 def main(args):
     # graph
@@ -59,7 +63,7 @@ def main(args):
     num_workers = args.num_workers
     train_ids = torch.LongTensor(np.arange(g.number_of_edges()))
     dataloader = DataLoader(dataset=train_ids, batch_size=batch_size, collate_fn=sampler.obtain_Bs,
-            shuffle=True, drop_last=False, num_workers=num_workers)
+            shuffle=True, drop_last=False, num_workers=num_workers, pin_memory=True)
 
     # 设定模型
     num_hid = args.num_hidden
@@ -77,26 +81,73 @@ def main(args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # acc
-    def compute_acc(logits, labels, train_nids, val_nids, test_nids):
+    def compute_acc(logits, labels, train_nids, val_nids, test_nids, num_labels):
         # 输出标准化
-        logits = (logits - logits.mean(0)) / logits.std(0)
+        print('Computing accuracy...')
+        logits = (logits - logits.mean(0)) / logits.std(0, unbiased=False)  # unbiased=False结果与numpy相同
 
-        clf = LogisticRegression(multi_class='multinomial', max_iter=10000)
-        clf.fit(logits[train_nids], labels[train_nid])
+        clf = LR_classification(num_labels, num_labels)
+        if use_cuda:
+            clf.cuda()
+        criterion = nn.NLLLoss()
+        optimizer = torch.optim.Adam(clf.parameters(), lr=0.003, weight_decay=1e-4)
 
-        pred = clf.predict(logits)
+        for epoch in range(10000):
+            y_pred = clf(logits[train_nids])
+            loss = criterion(y_pred, labels[train_nids])
+            #if epoch % 500 == 0:
+                #print('epoch: {} | loss: {}'.format(epoch, loss.item()))
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        #print('epoch: {} | loss: {}'.format(epoch, loss.item()))
 
-        f1_micro_eval = metrics.f1_score(labels[val_nids], pred[val_nids], average='micro')
-        f1_micro_test = metrics.f1_score(labels[test_nids], pred[test_nids], average='micro')
+        clf.eval()
+        with torch.no_grad():
+            pred = clf.forward(logits)
+
+        f1_micro_eval = (torch.argmax(pred[val_nids], dim=1) == labels[val_nids]).float().sum() / val_nids.shape[0]
+        f1_micro_test = (torch.argmax(pred[test_nids], dim=1) == labels[test_nids]).float().sum() / test_nids.shape[0]
         return f1_micro_eval, f1_micro_test
 
     # eval
-    def evaluation(model, g, labels, train_nids, val_nids, test_nids, batch_size):
+    def evaluation(model, g, labels, train_nids, val_nids, test_nids, batch_size, num_labels):
         model.eval()
         with torch.no_grad():
             logits = model.infer(g, batch_size)
         model.train()
-        return compute_acc(logits, labels, train_nids, val_nids, test_nids)
+        return compute_acc(logits, labels, train_nids, val_nids, test_nids, num_labels)
+
+    # link-prediction
+    def link_prediction(model, g, batch_size):
+        model.eval()
+        with torch.no_grad():
+            logits = model.infer(g, batch_size)
+        model.train()
+        '''
+        logits = (logits - logits.mean(0)) / logits.std(0, unbiased=False)  # unbiased=False结果与numpy相同
+
+        lp = Link_Prediction(num_labels * 2, num_labels * 2 * 2)
+        if use_cuda:
+            lp.cuda()
+        criterion = torch.nn.BCELoss()
+        optimizer = torch.optim.Adam(lp.parameters(), lr=0.003, weight_decay=1e-4)
+        '''
+        # 待补充...
+        precise = 0
+        for start in tqdm.trange(0, g.number_of_edges(), batch_size):
+            end = start + batch_size
+            if end > g.number_of_edges():
+                end = g.number_of_edges()
+            ed_ids = torch.LongTensor(np.arange(start, end))
+            heads, tails = g.find_edges(ed_ids)
+            src = g.ndata['z'][heads, :]
+            dst = g.ndata['z'][tails, :]
+            y_pred = nn.Sigmoid()((src * dst).sum(dim=1))
+            prec = (y_pred >= 0.5).float().sum()
+            precise = precise + prec
+        precision = precise / g.number_of_edges()
+        return precision
 
     # 训练、验证与测试
     n_epochs = args.num_epochs
@@ -108,11 +159,11 @@ def main(args):
     iter_t = []
     best_eval_acc = 0
     best_test_acc = 0
+    best_precision = 0
     for epoch in range(n_epochs):
         time_epoch_0 = time.time()
+        time_step = time.time()
         for step, (pos_graph, neg_graph, blocks) in enumerate(dataloader):
-            time_step = time.time()
-
             input_nodes = blocks[0].srcdata[dgl.NID]
             batch_inputs = g.ndata['features'][input_nodes]
             if use_cuda:
@@ -130,7 +181,7 @@ def main(args):
             edge_neg = neg_graph.number_of_edges()
             iter_pos.append(edge_pos / (time_train - time_step))
             iter_neg.append(edge_neg / (time_train - time_step))
-            iter_d.append(time_load - time_epoch_0)
+            iter_d.append(time_load - time_step)
             iter_t.append(time_train - time_load)
             if step % log_every == 0:
                 if step == 0:
@@ -145,20 +196,34 @@ def main(args):
                         'Speed (samples/sec) {:.4f} & {:.4f} | Load Time(sec) {:.4f} | Train Time(sec) {:.4f}'.format(
                             epoch, step, loss.item(), np.mean(iter_pos[3:]),
                             np.mean(iter_neg[3:]), np.mean(iter_d[3:]), np.mean(iter_t[3:])))
-            if epoch % eval_every == 0:
+            time_step = time.time()
+            if step % eval_every == 0:
                 print('\n')
                 print('Eval-ing...')
                 time_ev_0 = time.time()
-                eval_acc, test_acc = evaluation(model, g, labels, train_nid, val_nid, test_nid, batch_size)
-                if eval_acc > best_eval_acc:
-                    best_eval_acc = eval_acc
-                    best_test_acc = test_acc
-                time_ev_1 = time.time()
-                print('Eval Acc {:.4f} | Eval Time(s): {:.4f}'.format(eval_acc, time_ev_1 - time_ev_0))
-                print('Best Eval Acc {:.4f} | Best Test Acc {:.4f}'.format(best_eval_acc, best_test_acc))
+                if args.link:
+                    precision = link_prediction(model, g, batch_size)
+                    if precision > best_precision:
+                        best_precision = precision
+                    time_ev_1 = time.time()
+                    print('Precision {:.4f} | Eval Time(s): {:.4f}'.format(precision, time_ev_1 - time_ev_0))
+                    print('Best Precision {:.4f}'.format(best_precision))
+                else:
+                    eval_acc, test_acc = evaluation(model, g, labels, train_nid, val_nid, test_nid, batch_size, num_labels)
+                    if eval_acc > best_eval_acc:
+                        best_eval_acc = eval_acc
+                        best_test_acc = test_acc
+                    time_ev_1 = time.time()
+                    print('Eval Acc {:.4f} | Eval Time(s): {:.4f}'.format(eval_acc, time_ev_1 - time_ev_0))
+                    print('Best Eval Acc {:.4f} | Best Test Acc {:.4f}'.format(best_eval_acc, best_test_acc))
+                time_step = time.time()
+            #if step == 2:
+                #break
 
         time_epoch_1 = time.time()
         print('Epoch Time(s): {:.4f}'.format(time_epoch_1 - time_epoch_0))
+        #if epoch == 1:
+            #break
 
     print('\n')
     print('Finish!')
@@ -184,6 +249,13 @@ if __name__ == '__main__':
                         help="bias")
     argparser.add_argument("--norm", default=False, action='store_true',
                            help="norm")
+    argparser.add_argument("--link", default=False, action='store_true',
+                           help="link prediction")
     args = argparser.parse_args()
     print(args)
+    # 检测耗时
+    #profiler = Profiler()
+    #profiler.start()
     main(args)
+    #profiler.stop()
+    #print(profiler.output_text(unicode=True, color=True))
