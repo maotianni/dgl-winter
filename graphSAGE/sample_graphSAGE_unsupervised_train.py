@@ -124,16 +124,8 @@ def main(args):
         with torch.no_grad():
             logits = model.infer(g, batch_size)
         model.train()
-        '''
-        logits = (logits - logits.mean(0)) / logits.std(0, unbiased=False)  # unbiased=False结果与numpy相同
-
-        lp = Link_Prediction(num_labels * 2, num_labels * 2 * 2)
-        if use_cuda:
-            lp.cuda()
-        criterion = torch.nn.BCELoss()
-        optimizer = torch.optim.Adam(lp.parameters(), lr=0.003, weight_decay=1e-4)
-        '''
-        # 待补充...
+        
+        # 计算精度...
         precise = 0
         for start in tqdm.trange(0, g.number_of_edges(), batch_size):
             end = start + batch_size
