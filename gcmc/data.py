@@ -49,11 +49,11 @@ def node_features(data_set):
         users.user_id = users.user_id.map(map_dict_u)
         movies.movie_id = movies.movie_id.map(map_dict_v)
         # feat
-        temp_1 = np.eye(users.user_id.max())
-        temp_2 = np.zeros((users.user_id.max(), movies.movie_id.max()))
+        temp_1 = np.eye(users.shape[0])
+        temp_2 = np.zeros((users.shape[0], movies.shape[0]))
         x_u = th.Tensor(np.concatenate((temp_1, temp_2), axis=1))
-        temp_3 = np.zeros((movies.movie_id.max(), users.user_id.max()))
-        temp_4 = np.eye(movies.movie_id.max())
+        temp_3 = np.zeros((movies.shape[0], users.shape[0]))
+        temp_4 = np.eye(movies.shape[0])
         x_v = th.Tensor(np.concatenate((temp_3, temp_4), axis=1))
         return x_u, x_v
     else:
