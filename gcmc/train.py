@@ -1,65 +1,22 @@
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
-import dgl
 import argparse
 import time
 import pandas as pd
 import numpy as np
+from scipy.sparse import coo_matrix
 import matplotlib.pyplot as plt
 
 from model import GraphConvMatrixCompletion
-
-
-def node_features():
-    users = pd.read_table('data/ml-100k/u.user', sep="|",
-                          names=['user_id', 'age', 'sex', 'occupation', 'zip_code'],
-                          encoding='latin-1', engine='python')
-    movies = pd.read_table('data/ml-100k/u.item', engine='python', sep='|',
-                           header=None, encoding='latin-1',
-                           names=['movie_id', 'title', 'release_date', 'video_release_date',
-                                  'IMDb_URL', 'unknown', 'Action', 'Adventure',
-                                  'Animation', 'Children', 'Comedy', 'Crime', 'Documentary',
-                                  'Drama', 'Fantasy', 'Film-Noir', 'Horror', 'Musical', 'Mystery',
-                                  'Romance', 'Sci-Fi', 'Thriller', 'War', 'Western'])
-    users['sex'] = pd.get_dummies(data=users['sex'], prefix='sex').iloc[:, 1]
-    temp_1 = users.iloc[:, 1:3].values
-    temp_2 = pd.get_dummies(data=users['occupation'], prefix='occupation').iloc[:, 1:].values
-    temp_3 = np.zeros((943, 18))
-    x_u = th.Tensor(np.concatenate((temp_1, temp_2, temp_3), axis=1))
-    temp_4 = np.zeros((1682, 22))
-    temp_5 = movies.iloc[:, 6:].values
-    x_v = th.Tensor(np.concatenate((temp_4, temp_5), axis=1))
-    return x_u, x_v
+from data import node_features, load_feats
 
 
 def main(args):
-    features = node_features()
+    data_set = args.data_set
+    features = node_features(data_set)
+    users, movies, all_train_rating_info, test_rating_info = load_feats(data_set)
 
-    # full data
-    users = pd.read_table('data/ml-100k/u.user', sep="|",
-                          names=['user_id', 'age', 'sex', 'occupation', 'zip_code'],
-                          encoding='latin-1', engine='python')
-    movies = pd.read_table('data/ml-100k/u.item', engine='python', sep='|',
-                           header=None, encoding='latin-1',
-                           names=['movie_id', 'title', 'release_date', 'video_release_date',
-                                  'IMDb_URL', 'unknown', 'Action', 'Adventure',
-                                  'Animation', 'Children', 'Comedy', 'Crime', 'Documentary',
-                                  'Drama', 'Fantasy', 'Film-Noir', 'Horror', 'Musical', 'Mystery',
-                                  'Romance', 'Sci-Fi', 'Thriller', 'War', 'Western'])
-    # train / test
-    all_train_rating_info = pd.read_csv(
-                                        'data/ml-100k/u1.base', sep='\t', header=None,
-                                        names=['user_id', 'movie_id', 'rating', 'timestamp'],
-                                        dtype={'user_id': np.int32, 'movie_id' : np.int32,
-                                               'ratings': np.float32, 'timestamp': np.int64}, engine='python'
-                                       )
-    test_rating_info = pd.read_csv(
-                                   'data/ml-100k/u1.test', sep='\t', header=None,
-                                   names=['user_id', 'movie_id', 'rating', 'timestamp'],
-                                   dtype={'user_id': np.int32, 'movie_id' : np.int32,
-                                          'ratings': np.float32, 'timestamp': np.int64}, engine='python'
-                                   )
     # validation
     validation = args.validation
     if validation:
@@ -74,105 +31,123 @@ def main(args):
 
 
     # create graphs
+    if data_set == 'ml-10m':
+        n_ratings = 10
+    else:
+        n_ratings = 5
     # train
-    edge_u_train = train_rating_info.user_id.values - 1
-    edge_v_train = train_rating_info.movie_id.values - 1
+    edge_u_train = train_rating_info.user_id.values
+    edge_v_train = train_rating_info.movie_id.values
     edge_r_train = th.Tensor(train_rating_info.rating.values)
-
     rates = []
-    for i in range(5):
+    rates_rev = []
+    for i in range(n_ratings):
         index = np.argwhere(train_rating_info.rating == (i + 1)).T[0, :]
-        e_user = train_rating_info.user_id.values[index] - 1
-        e_item = train_rating_info.movie_id.values[index] - 1
-        edge = list(zip(e_user, e_item))
-        edge_rev = list(zip(e_item, e_user))
-        rates.append(dgl.bipartite(edge, 'user', '{}'.format(i+1), 'item',
-                                   card=(users.values.shape[0], movies.values.shape[0])))
-        rates.append(dgl.bipartite(edge_rev, 'item', 'rev{}'.format(i+1), 'user',
-                                   card=(movies.values.shape[0], users.values.shape[0])))
-    g = dgl.hetero_from_relations(rates)
-    user_ci = []
-    user_cj = []
-    item_ci = []
-    item_cj = []
-    for i in range(5):
-        user_ci.append(g['rev{}'.format(i+1)].in_degrees())
-        item_ci.append(g['{}'.format(i+1)].in_degrees())
-        user_cj.append(g['{}'.format(i+1)].out_degrees())
-        item_cj.append(g['rev{}'.format(i+1)].out_degrees())
-    uci = np.sqrt(1 / (sum(user_ci).numpy()).astype('float64'))
-    uci[uci == np.inf] = 1
-    vci = np.sqrt(1 / (sum(item_ci).numpy()).astype('float64'))
-    vci[vci == np.inf] = 1
-    ucj = np.sqrt(1 / (sum(user_cj).numpy()).astype('float64'))
-    ucj[ucj == np.inf] = 1
-    vcj = np.sqrt(1 / (sum(item_cj).numpy()).astype('float64'))
-    vcj[vcj == np.inf] = 1
-    user_ci = th.Tensor(uci)
-    item_ci = th.Tensor(vci)
-    user_cj = th.Tensor(ucj)
-    item_cj = th.Tensor(vcj)
-    g.nodes['user'].data.update({'ci': user_ci, 'cj': user_cj})
-    g.nodes['item'].data.update({'ci': item_ci, 'cj': item_cj})
+        e_user = train_rating_info.user_id.values[index]
+        e_item = train_rating_info.movie_id.values[index]
+        e = np.ones(len(index))
+        A_ur = coo_matrix((e, (e_user, e_item)), shape=(users.values.shape[0], movies.values.shape[0])).toarray()
+        A_vr = coo_matrix((e, (e_item, e_user)), shape=(movies.values.shape[0], users.values.shape[0])).toarray()
+        rates.append(A_ur)
+        rates_rev.append(A_vr)
+    A_u = th.Tensor(rates)
+    A_v = th.Tensor(rates_rev)
+    A = sum(rates)
+    D_u = np.eye(users.values.shape[0]) * sum(A.T)
+    D_v = np.eye(movies.values.shape[0]) * sum(A)
+    D_u = D_u ** (-1 / 2)
+    D_v = D_v ** (-1 / 2)
+    D_u[D_u == np.inf] = 0
+    D_v[D_v == np.inf] = 0
+    D_u = th.Tensor(D_u)
+    D_v = th.Tensor(D_v)
 
     # validation
-    edge_u_val = validation_rating_info.user_id.values - 1
-    edge_v_val = validation_rating_info.movie_id.values - 1
+    edge_u_val = validation_rating_info.user_id.values
+    edge_v_val = validation_rating_info.movie_id.values
     edge_r_val = th.Tensor(validation_rating_info.rating.values)
+    rates_val = []
+    rates_rev_val = []
+    for i in range(n_ratings):
+        index = np.argwhere(validation_rating_info.rating == (i + 1)).T[0, :]
+        e_user = validation_rating_info.user_id.values[index]
+        e_item = validation_rating_info.movie_id.values[index]
+        e = np.ones(len(index))
+        A_ur = coo_matrix((e, (e_user, e_item)), shape=(users.values.shape[0], movies.values.shape[0])).toarray()
+        A_vr = coo_matrix((e, (e_item, e_user)), shape=(movies.values.shape[0], users.values.shape[0])).toarray()
+        rates_val.append(A_ur)
+        rates_rev_val.append(A_vr)
+    A_u_val = th.Tensor(rates_val)
+    A_v_val = th.Tensor(rates_rev_val)
+    A_val = sum(rates_val)
+    D_u_val = np.eye(users.values.shape[0]) * sum(A_val.T)
+    D_v_val = np.eye(movies.values.shape[0]) * sum(A_val)
+    D_u_val = D_u_val ** (-1 / 2)
+    D_v_val = D_v_val ** (-1 / 2)
+    D_u_val[D_u_val == np.inf] = 0
+    D_v_val[D_v_val == np.inf] = 0
+    D_u_val = th.Tensor(D_u_val)
+    D_v_val = th.Tensor(D_v_val)
+
     # test
-    edge_u_test = test_rating_info.user_id.values - 1
-    edge_v_test = test_rating_info.movie_id.values - 1
+    edge_u_test = test_rating_info.user_id.values
+    edge_v_test = test_rating_info.movie_id.values
     edge_r_test = th.Tensor(test_rating_info.rating.values)
     rates_test = []
-    for i in range(5):
+    rates_rev_test = []
+    for i in range(n_ratings):
         index = np.argwhere(test_rating_info.rating == (i + 1)).T[0, :]
-        e_user = test_rating_info.user_id.values[index] - 1
-        e_item = test_rating_info.movie_id.values[index] - 1
-        edge = list(zip(e_user, e_item))
-        edge_rev = list(zip(e_item, e_user))
-        rates_test.append(dgl.bipartite(edge, 'user', '{}'.format(i+1), 'item',
-                                   card=(users.values.shape[0], movies.values.shape[0])))
-        rates_test.append(dgl.bipartite(edge_rev, 'item', 'rev{}'.format(i+1), 'user',
-                                   card=(movies.values.shape[0], users.values.shape[0])))
-    g_test = dgl.hetero_from_relations(rates_test)
-    user_ci_test = []
-    user_cj_test = []
-    item_ci_test = []
-    item_cj_test = []
-    for i in range(5):
-        user_ci_test.append(g['rev{}'.format(i+1)].in_degrees())
-        item_ci_test.append(g['{}'.format(i+1)].in_degrees())
-        user_cj_test.append(g['{}'.format(i+1)].out_degrees())
-        item_cj_test.append(g['rev{}'.format(i+1)].out_degrees())
-    uci_test = np.sqrt(1 / (sum(user_ci_test).numpy()).astype('float64'))
-    uci_test[uci_test == np.inf] = 1
-    vci_test = np.sqrt(1 / (sum(item_ci_test).numpy()).astype('float64'))
-    vci_test[vci_test == np.inf] = 1
-    ucj_test = np.sqrt(1 / (sum(user_cj_test).numpy()).astype('float64'))
-    ucj_test[ucj_test == np.inf] = 1
-    vcj_test = np.sqrt(1 / (sum(item_cj_test).numpy()).astype('float64'))
-    vcj_test[vcj_test == np.inf] = 1
-    user_ci_test = th.Tensor(uci_test)
-    item_ci_test = th.Tensor(vci_test)
-    user_cj_test = th.Tensor(ucj_test)
-    item_cj_test = th.Tensor(vcj_test)
-    g_test.nodes['user'].data.update({'ci': user_ci_test, 'cj': user_cj_test})
-    g_test.nodes['item'].data.update({'ci': item_ci_test, 'cj': item_cj_test})
+        e_user = test_rating_info.user_id.values[index]
+        e_item = test_rating_info.movie_id.values[index]
+        e = np.ones(len(index))
+        A_ur = coo_matrix((e, (e_user, e_item)), shape=(users.values.shape[0], movies.values.shape[0])).toarray()
+        A_vr = coo_matrix((e, (e_item, e_user)), shape=(movies.values.shape[0], users.values.shape[0])).toarray()
+        rates_test.append(A_ur)
+        rates_rev_test.append(A_vr)
+    A_u_test = th.Tensor(rates_test)
+    A_v_test = th.Tensor(rates_rev_test)
+    A_test = sum(rates_test)
+    D_u_test = np.eye(users.values.shape[0]) * sum(A_test.T)
+    D_v_test = np.eye(movies.values.shape[0]) * sum(A_test)
+    D_u_test = D_u_test ** (-1 / 2)
+    D_v_test = D_v_test ** (-1 / 2)
+    D_u_test[D_u_test == np.inf] = 0
+    D_v_test[D_v_test == np.inf] = 0
+    D_u_test = th.Tensor(D_u_test)
+    D_v_test = th.Tensor(D_v_test)
 
 
     # features
-    g.nodes['user'].data['x'] = features[0]
-    g.nodes['item'].data['x'] = features[1]
-    g_test.nodes['user'].data['x'] = features[0]
-    g_test.nodes['item'].data['x'] = features[1]
+    X_u = features[0]
+    X_v = features[1]
+    X_u_val = features[0]
+    X_v_val = features[1]
+    X_u_test = features[0]
+    X_v_test = features[1]
 
     # check cuda
     gpu = args.gpu
     use_cuda = gpu >= 0 and th.cuda.is_available()
     if use_cuda:
         th.cuda.set_device(gpu)
-        g.to(th.device('cuda:{}'.format(gpu)))
-        g_test.to(th.device('cuda:{}'.format(gpu)))
+        X_u = X_u.cuda()
+        X_v = X_v.cuda()
+        X_u_val = X_u_val.cuda()
+        X_v_val = X_v_val.cuda()
+        X_u_test = X_u_test.cuda()
+        X_v_test = X_v_test.cuda()
+        A_u = A_u.cuda()
+        A_v = A_v.cuda()
+        A_u_val = A_u_val.cuda()
+        A_v_val = A_v_val.cuda()
+        A_u_test = A_u_test.cuda()
+        A_v_test = A_v_test.cuda()
+        D_u = D_u.cuda()
+        D_v = D_v.cuda()
+        D_u_val = D_u_val.cuda()
+        D_v_val = D_v_val.cuda()
+        D_u_test = D_u_test.cuda()
+        D_v_test = D_v_test.cuda()
         edge_r_train = edge_r_train.cuda()
         edge_r_val = edge_r_val.cuda()
         edge_r_test = edge_r_test.cuda()
@@ -180,6 +155,7 @@ def main(args):
     # create model
     u_num = users.values.shape[0]
     v_num = movies.values.shape[0]
+    n_in = X_u.shape[1]
     n_ins = args.n_ins
     n_hidden = args.n_hidden
     n_z = args.n_z
@@ -191,9 +167,9 @@ def main(args):
     dropout = args.dropout
     norm = args.norm
 
-    model = GraphConvMatrixCompletion(u_num, v_num, 40, n_ins, n_hidden, n_z, 5, n_bases,
+    model = GraphConvMatrixCompletion(u_num, v_num, n_in, n_ins, n_hidden, n_z, n_ratings, n_bases,
                                       norm=norm, accum=accum, w_sharing=w_sharing,
-                                      activation=F.relu, side_information=side_information, bias=bias,
+                                      activation=F.leaky_relu, side_information=side_information, bias=bias,
                                       dropout=dropout, use_cuda=use_cuda)
     if use_cuda:
         model.cuda()
@@ -213,36 +189,36 @@ def main(args):
     # plot the experiment
     t_loss, t_rmse, v_loss, v_rmse = [], [], [], []
 
-    r = th.Tensor([1, 2, 3, 4, 5])
+    if data_set == 'ml-10m':
+        r = th.Tensor([0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5])
+    else:
+        r = th.Tensor([1, 2, 3, 4, 5])
     loss_function = nn.MSELoss()
     if use_cuda:
         r = r.cuda()
     for epoch in range(n_epochs):
         optimizer.zero_grad()
         t0 = time.time()
-        logits = model(g, features[0], features[1])[0]
+        logits = model(X_u, X_v, A_u, A_v, D_u, D_v, X_u, X_v)[0]
         logits_partial = logits[:, edge_u_train, edge_v_train].T
-        if use_cuda:
-            logits_partial = logits_partial.cuda()
-        loss = F.cross_entropy(logits_partial, (edge_r_train - 1).long())
+        loss = F.cross_entropy(logits_partial, (edge_r_train - 1).long()).mean()
+        t1 = time.time()
+        loss.backward(retain_graph=True)
+        t2 = time.time()
         M_partial = th.matmul(r, logits_partial.T)
         train_mse = loss_function(M_partial, edge_r_train)
         train_rmse = train_mse.sqrt()
-        t1 = time.time()
-        train_rmse.backward(retain_graph=True)
         optimizer.step()
-        t2 = time.time()
+        
 
         forward_time.append(t1 - t0)
         backward_time.append(t2 - t1)
         print("Epoch {:05d} | Train Forward Time(s) {:.4f} | Backward Time(s) {:.4f}".
               format(epoch, forward_time[-1], backward_time[-1]))
 
-
-
-        logits_partial_v = logits[:, edge_u_val, edge_v_val].T
-        if use_cuda:
-            logits_partial_v = logits_partial.cuda()
+        model.eval()
+        logits_v = model.forward(X_u_val, X_v_val, A_u_val, A_v_val, D_u_val, D_v_val, X_u_val, X_v_val)[0]
+        logits_partial_v = logits_v[:, edge_u_val, edge_v_val].T
         val_loss = F.cross_entropy(logits_partial_v, (edge_r_val-1).long())
         M_partial_v = th.matmul(r, logits_partial_v.T)
         val_mse = loss_function(M_partial_v, edge_r_val)
@@ -258,10 +234,8 @@ def main(args):
     print()
 
     model.eval()
-    logits = model.forward(g_test, features[0], features[1])[0]
+    logits = model.forward(X_u_test, X_v_test, A_u_test, A_v_test, D_u_test, D_v_test, X_u_test, X_v_test)[0]
     logits_partial_t = logits[:, edge_u_test, edge_v_test].T
-    if use_cuda:
-        logits_partial_t = logits_partial_t.cuda()
     test_loss = F.cross_entropy(logits_partial_t, (edge_r_test-1).long())
     M_partial_t = th.matmul(r, logits_partial_t.T)
     test_mse = loss_function(M_partial_t, edge_r_test)
@@ -311,6 +285,8 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='GC-MC')
+    parser.add_argument("--data-set", type=str, default='ml-100k',
+                        help="choose the dataset")
     parser.add_argument("--validation", default=True, action='store_false',
                 help="use validation sets")
     parser.add_argument("--gpu", type=int, default=-1,
