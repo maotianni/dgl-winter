@@ -1,7 +1,6 @@
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
-import dgl.function as fn
 
 
 class GraphCovLayer(nn.Module):
@@ -18,8 +17,6 @@ class GraphCovLayer(nn.Module):
                  dropout=0.0,
                  use_cuda=False):
         super(GraphCovLayer, self).__init__()
-        self.u_num = u_num
-        self.v_num = v_num
         self.in_feat = in_feat
         self.hid_feat = hid_feat
         self.num_of_ratings = num_of_ratings
@@ -32,13 +29,6 @@ class GraphCovLayer(nn.Module):
         # 初始化W_{r}的参数
         self.raw_weight = nn.Parameter(th.Tensor(self.num_of_ratings, self.in_feat, self.hid_feat))
         nn.init.xavier_uniform_(self.raw_weight, gain=nn.init.calculate_gain('relu'))
-        if self.w_sharing:
-            new_weight = []
-            for i in range(0, self.num_of_ratings):
-                new_weight.append(th.sum(self.raw_weight[:i+1, :, :], dim=0, keepdim=True))
-            self.weight = th.cat(new_weight)
-        else:
-            self.weight = self.raw_weight
         # activation
         self.activation = activation
         # dropout
@@ -46,41 +36,46 @@ class GraphCovLayer(nn.Module):
         # cuda
         self.use_cuda = use_cuda
 
-    def forward(self, g, h_u=None, h_v=None):
-        funcs = {}
-        for i in range(5):
-            x_u = th.matmul(g.nodes['user'].data['x'], self.weight[i])
-            x_v = th.matmul(g.nodes['item'].data['x'], self.weight[i])
-            # right norm and dropout
-            if self.norm == 'symmetric':
-                x_u = x_u * g.nodes['user'].data['cj'].view(self.u_num, 1)
-                x_v = x_v * g.nodes['item'].data['cj'].view(self.v_num, 1)
-            if self.dropout:
-                x_u = self.dropout(x_u)
-                x_v = self.dropout(x_v)
-            g.nodes['user'].data['h{}'.format(i + 1)] = x_u
-            g.nodes['item'].data['h{}'.format(i + 1)] = x_v
-            funcs['{}'.format(i + 1)] = (fn.copy_u('h{}'.format(i + 1), 'm'), fn.sum('m', 'h'))
-            funcs['rev{}'.format(i + 1)] = (fn.copy_u('h{}'.format(i + 1), 'm'), fn.sum('m', 'h'))
-        g.multi_update_all(funcs, self.accum)
-        h_u = g.nodes['user'].data['h'].view(self.u_num, -1)
-        h_v = g.nodes['item'].data['h'].view(self.v_num, -1)
-        # print('h_u:{}'.format(sum(sum(th.isnan(h_u)))))
-        # print('h_v:{}'.format(sum(sum(th.isnan(h_v)))))
-        # left norm
-        if self.norm == 'symmetric':
-            h_u = h_u * g.nodes['user'].data['ci'].view(self.u_num, 1)
-            h_v = h_v * g.nodes['item'].data['ci'].view(self.v_num, 1)
+    def forward(self, x_u, x_v, a_u, a_v, d_u, d_v, h_u=None, h_v=None):
+        # 参数矩阵
+        if self.w_sharing:
+            new_weight = []
+            for i in range(0, self.num_of_ratings):
+                new_weight.append(th.sum(self.raw_weight[:i+1, :, :], dim=0, keepdim=True))
+            weight = th.cat(new_weight)
         else:
-            h_u = h_u * g.nodes['user'].data['ci'].view(self.u_num, 1) * g.nodes['user'].data['ci'].view(self.u_num, 1)
-            h_v = h_v * g.nodes['item'].data['ci'].view(self.v_num, 1) * g.nodes['item'].data['ci'].view(self.v_num, 1)
-        # print('h_u, right norm:{}'.format(sum(sum(th.isnan(h_u)))))
-        # print('h_v, right norm:{}'.format(sum(sum(th.isnan(h_v)))))
+            weight = self.raw_weight
+        # 运算部分
+        h_us = []
+        h_vs = []
+        for r in range(5):
+            h_ur = th.matmul(x_v, weight[r, :, :])
+            h_vr = th.matmul(x_u, weight[r, :, :])
+            if self.norm == 'symmetric':
+                h_ur = th.matmul(d_v, h_ur)
+                h_vr = th.matmul(d_u, h_vr)
+            h_ur = th.matmul(a_u[r], h_ur)
+            h_vr = th.matmul(a_v[r], h_vr)
+            if self.norm == 'symmetric':
+                h_ur = th.matmul(d_u, h_ur)
+                h_vr = th.matmul(d_v, h_vr)
+            else:
+                h_ur = th.matmul(d_u ** 2, h_ur)
+                h_vr = th.matmul(d_v ** 2, h_vr)
+            if self.dropout:
+                h_ur = self.dropout(h_ur)
+                h_vr = self.dropout(h_vr)
+            h_us.append(h_ur)
+            h_vs.append(h_vr)
+        if self.accum == 'stack':
+            h_u = th.cat(h_us, dim=1)
+            h_v = th.cat(h_vs, dim=1)
+        else:
+            h_u = sum(h_us)
+            h_v = sum(h_vs)
         if self.activation:
             h_u = self.activation(h_u, inplace=False)
             h_v = self.activation(h_v, inplace=False)
-            # print('h_u, activation:{}'.format(sum(sum(th.isnan(h_u)))))
-            # print('h_v, activation:{}'.format(sum(sum(th.isnan(h_v)))))
         return h_u, h_v
 
 
@@ -119,13 +114,8 @@ class EmbeddingLayer(nn.Module):
             self.f_bias_v = nn.Parameter(th.Tensor(self.ins_feat))
             nn.init.zeros_(self.f_bias_v)
 
-    def forward(self, g, h_u, h_v):
+    def forward(self, x_u, x_v, a_u, a_v, d_u, d_v, h_u, h_v):
         # 遇到变量类型报错，尝试.（*变量类型），以转换到相应的变量类型
-        # g = g.local_var()
-        x_u = g.nodes['user'].data['x']
-        x_v = g.nodes['item'].data['x']
-        # h_u = g.nodes['user'].data['h']
-        # h_v = g.nodes['item'].data['h']
         if self.use_cuda:
             x_u = x_u.cuda()
             x_v = x_v.cuda()
@@ -137,18 +127,12 @@ class EmbeddingLayer(nn.Module):
             if self.bias:
                 f_u = f_u + self.f_bias_u
                 f_v = f_v + self.f_bias_v
-            # print('f_u:{}'.format(sum(sum(th.isnan(f_u)))))
-            # print('f_v:{}'.format(sum(sum(th.isnan(f_v)))))
             # activation
             if self.activation:
                 f_u = self.activation(f_u, inplace=False)
                 f_v = self.activation(f_v, inplace=False)
-                # print('f_u:{}'.format(sum(sum(th.isnan(f_u)))))
-                # print('f_v:{}'.format(sum(sum(th.isnan(f_v)))))
             z_u = th.matmul(h_u, self.weight) + th.matmul(f_u, self.weight_2_u)
             z_v = th.matmul(h_v, self.weight) + th.matmul(f_v, self.weight_2_v)
-            # print('z_u:{}'.format(sum(sum(th.isnan(z_u)))))
-            # print('z_v:{}'.format(sum(sum(th.isnan(z_v)))))
         else:
             z_u = th.matmul(h_u, self.weight)
             z_v = th.matmul(h_v, self.weight)
@@ -156,20 +140,16 @@ class EmbeddingLayer(nn.Module):
         if self.activation:
             z_u = self.activation(z_u, inplace=False)
             z_v = self.activation(z_v, inplace=False)
-            # print('z_u:{}'.format(sum(sum(th.isnan(z_u)))))
-            # print('z_v:{}'.format(sum(sum(th.isnan(z_v)))))
         z_u = self.dropout(z_u)
         z_v = self.dropout(z_v)
-        # print('z_u:{}'.format(sum(sum(th.isnan(z_u)))))
-        # print('z_v:{}'.format(sum(sum(th.isnan(z_v)))))
-        g.nodes['user'].data['z'] = z_u
-        g.nodes['item'].data['z'] = z_v
         return z_u, z_v
 
 
 class BilinearDecoder(nn.Module):
-    def __init__(self, out_feat, num_of_ratings, num_of_bases, w_sharing=False, use_cuda=False):
+    def __init__(self, u_num, v_num, out_feat, num_of_ratings, num_of_bases, w_sharing=False, use_cuda=False):
         super(BilinearDecoder, self).__init__()
+        self.u_num = u_num
+        self.v_num = v_num
         self.out_feat = out_feat
         self.num_of_ratings = num_of_ratings
         self.num_of_bases = num_of_bases
@@ -180,35 +160,34 @@ class BilinearDecoder(nn.Module):
             nn.init.xavier_uniform_(self.P_s, gain=nn.init.calculate_gain('relu'))
             self.a_rs = nn.Parameter(th.Tensor(self.num_of_ratings, self.num_of_bases))
             nn.init.xavier_uniform_(self.a_rs, gain=nn.init.calculate_gain('relu'))
-            self.Q_r = th.matmul(self.a_rs, self.P_s).view(self.num_of_ratings, self.out_feat, self.out_feat)
         else:
             self.Q_r = nn.Parameter(th.Tensor(self.num_of_ratings, self.out_feat, self.out_feat))
             nn.init.xavier_uniform_(self.Q_r, gain=nn.init.calculate_gain('relu'))
-        if self.use_cuda:
-            self.Q_r = self.Q_r.cuda()
 
-    def calculate_p(self, g, z_u, z_v):
+    def calculate_p(self, z_u, z_v):
         p = []
-        Q_r = self.Q_r
+        # 参数矩阵
+        if self.w_sharing:
+            Q_r = th.matmul(self.a_rs, self.P_s).view(self.num_of_ratings, self.out_feat, self.out_feat)
+        else:
+            Q_r = self.Q_r
+        # 运算部分
         for i in range(self.num_of_ratings):
-            temp = th.matmul(z_u, Q_r[i])
+            temp = th.matmul(z_u, Q_r[i, :, :])
             pi = th.matmul(temp, th.transpose(z_v, 1, 0))
-            p.append(pi.view(1, g.number_of_nodes('user'), g.number_of_nodes('item')))
+            p.append(pi.view(1, self.u_num, self.v_num))
         P = th.cat(p)
         if self.use_cuda:
             P = P.cuda()
         return P
 
-    def forward(self, g, h_u, h_v):
-        # g = g.local_var()
+    def forward(self, x_u, x_v, a_u, a_v, d_u, d_v, h_u, h_v):
         z_u = h_u
         z_v = h_v
         if self.use_cuda:
             z_u = z_u.cuda()
             z_v = z_v.cuda()
-        p = self.calculate_p(g, z_u, z_v)
-        # print('p:{}'.format(sum(sum(sum(th.isnan(p))))))
+        p = self.calculate_p(z_u, z_v)
         P = F.softmax(p, dim=0)
-        # print('P:{}'.format(sum(sum(sum(th.isnan(P))))))
         temp = None
         return P, temp
