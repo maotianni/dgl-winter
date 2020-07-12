@@ -58,10 +58,10 @@ def node_features(data_set):
         return x_u, x_v
     else:
         rnames = ['user_id', 'movie_id', 'rating', 'timestamp']
-        ratings = pd.read_table('data/ml-10m/ml-10m100k/ratings.dat', header=None, sep='::', names=rnames,
+        ratings = pd.read_table('data/ml-10m/ml-10M100K/ratings.dat', header=None, sep='::', names=rnames,
                                 engine='python')
         mnames = ['movie_id', 'title', 'genres']
-        movies = pd.read_table('data/ml-10m/ml-10m100k/movies.dat', header=None, sep='::', names=mnames,
+        movies = pd.read_table('data/ml-10m/ml-10M100K/movies.dat', header=None, sep='::', names=mnames,
                                engine='python')
         users = ratings.user_id.unique()
         map_dict_u = {}
@@ -147,10 +147,10 @@ def load_feats(data_set):
         return users, movies, all_train_rating_info, test_rating_info
     else:
         rnames = ['user_id', 'movie_id', 'rating', 'timestamp']
-        ratings = pd.read_table('data/ml-10m/ml-10m100k/ratings.dat', header=None, sep='::', names=rnames,
+        ratings = pd.read_table('data/ml-10m/ml-10M100K/ratings.dat', header=None, sep='::', names=rnames,
                                 engine='python')
         mnames = ['movie_id', 'title', 'genres']
-        movies = pd.read_table('data/ml-10m/ml-10m100k/movies.dat', header=None, sep='::', names=mnames,
+        movies = pd.read_table('data/ml-10m/ml-10M100K/movies.dat', header=None, sep='::', names=mnames,
                                engine='python')
         users = ratings.user_id.unique()
         map_dict_u = {}
