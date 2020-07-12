@@ -1,6 +1,4 @@
-import torch as th
 import torch.nn as nn
-import torch.nn.functional as F
 
 from layers import GraphCovLayer, EmbeddingLayer, BilinearDecoder
 
@@ -54,9 +52,9 @@ class Template(nn.Module):
     def build_Decode_layer(self):
         return None
 
-    def forward(self, g, h_u, h_v):
+    def forward(self, x_u, x_v, a_u, a_v, d_u, d_v, h_u, h_v):
         for layer in self.layers:
-            h_u, h_v = layer(g, h_u, h_v)
+            h_u, h_v = layer(x_u, x_v, a_u, a_v, d_u, d_v, h_u, h_v)
         return h_u, h_v
 
 
@@ -72,7 +70,7 @@ class EncoderNDecoder(Template):
                               bias=self.bias, dropout=self.dropout, use_cuda=self.use_cuda)
 
     def build_Decode_layer(self):
-        return BilinearDecoder(self.out_dim, self.num_of_ratings, self.num_of_bases,
+        return BilinearDecoder(self.u_num, self.v_num, self.out_dim, self.num_of_ratings, self.num_of_bases,
                                w_sharing=self.w_sharing, use_cuda=self.use_cuda)
 
 
@@ -87,5 +85,5 @@ class GraphConvMatrixCompletion(nn.Module):
                                     side_information=side_information, bias=bias,
                                     dropout=dropout, use_cuda=use_cuda)
 
-    def forward(self, g, h_u, h_v):
-        return self.encoderNdecoder.forward(g, h_u, h_v)
+    def forward(self, x_u, x_v, a_u, a_v, d_u, d_v, h_u, h_v):
+        return self.encoderNdecoder.forward(x_u, x_v, a_u, a_v, d_u, d_v, h_u, h_v)
