@@ -1,11 +1,13 @@
 import pandas as pd
 import numpy as np
+import scipy.sparse as sp
 import dgl
 from dgl import DGLGraph
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from sklearn.metrics import average_precision_score, roc_auc_score
 import time
 import argparse
 from pyinstrument import Profiler
@@ -13,7 +15,7 @@ from sample_graphSAGE_unsupervised import Unsuper_Cross_Entropy, Sample, GraphSA
 
 def main(args):
     df = {'src': [], 'dst': [], 't': []}
-    with open('data/CollegeMsg.txt', 'r') as f:
+    with open('../data/CollegeMsg.txt', 'r') as f:
         while True:
             line = f.readline()
             if not line:
@@ -35,21 +37,28 @@ def main(args):
     # train / val / test
     test_split = np.floor(n_edges * 0.8).astype('int64')
     val_split = np.floor(test_split * 0.8).astype('int64')
-    val_set = edges.iloc[: test_split, :]
     train_set = edges.iloc[:val_split, :]
+    val_set = edges.iloc[: test_split, :]
     train_eid = torch.LongTensor(np.arange(0, val_split))
-    val_eid = torch.LongTensor(np.arange(val_split, test_split))
-    test_eid = torch.LongTensor(np.arange(test_split, n_edges))
+    train_nds = pd.concat([train_set['src'], train_set['dst']], axis=0).unique()
+    val_nds = pd.concat([val_set['src'], val_set['dst']], axis=0).unique()
+    head, tail = edges['src'].values[: val_split], edges['dst'].values[: val_split]
+    head_v, tail_v = edges['src'].values[val_split: test_split], edges['dst'].values[val_split: test_split]
+    head_t, tail_t = edges['src'].values[test_split:], edges['dst'].values[test_split]
+    # 验证集和测试集原有的边抹去
+    coo_train = sp.coo_matrix((np.ones(train_set.shape[0]), (head, tail)),
+                              shape=(train_nds.shape[0], train_nds.shape[0]))
+    coo_val = sp.coo_matrix((np.ones(train_set.shape[0]), (head, tail)),
+                            shape=(val_nds.shape[0], val_nds.shape[0]))
+    coo_test = sp.coo_matrix((np.ones(val_set.shape[0]),
+                              (np.concatenate([head, head_v]), np.concatenate([tail, tail_v]))),
+                             shape=(nodes.shape[0], nodes.shape[0]))
     # graph
-    graph = DGLGraph((train_set['src'].values, train_set['dst'].values))
-    graph_v = DGLGraph((val_set['src'].values, val_set['dst'].values))
-    graph_t = DGLGraph((edges['src'].values, edges['dst'].values))
-    # 转为HetroGraph
-    g = dgl.graph(graph.all_edges())
-    g.ndata['features'] = features[pd.concat([train_set['src'], train_set['dst']], axis=0).unique(), :]
-    g_v = dgl.graph(graph_v.all_edges())
-    g_v.ndata['features'] = features[pd.concat([val_set['src'], val_set['dst']], axis=0).unique(), :]
-    g_t = dgl.graph(graph_t.all_edges())
+    g = dgl.graph(coo_train)
+    g.ndata['features'] = features[train_nds, :]
+    g_v = dgl.graph(coo_val)
+    g_v.ndata['features'] = features[val_nds, :]
+    g_t = dgl.graph(coo_test)
     g_t.ndata['features'] = features
 
     gpu = args.gpu
@@ -86,25 +95,34 @@ def main(args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # link-prediction
-    def link_prediction(model, g_v, g_t, batch_size, val_id, test_id):
+    def link_prediction(model, g_v, g_t, batch_size, head, tail, head_v, tail_v, head_t, tail_t):
         model.eval()
         with torch.no_grad():
             logits_v = model.infer(g_v, batch_size)
             logits_t = model.infer(g_t, batch_size)
         model.train()
+        link_pre_res = {}
         # val
-        heads_v, tails_v = g_v.find_edges(val_id)
-        src_v = logits_v[heads_v, :]
-        dst_v = logits_v[tails_v, :]
-        y_pred_v = nn.Sigmoid()((src_v * dst_v).sum(dim=1))
-        precision_v = (y_pred_v >= 0.5).float().sum() / val_id.shape[0]
+        y_pred_v = nn.Sigmoid()(torch.matmul(logits_v, logits_v.T))
+        y_pred_v = y_pred_v.cpu().numpy()
+        truth_v = np.zeros((g_v.number_of_nodes(), g_v.number_of_nodes()))
+        truth_v[head, tail] = -1            # 训练集已有的边不管
+        truth_v[head_v, tail_v] = 1
+        y_pred_v = y_pred_v[np.where(truth_v > -1)].reshape(-1)
+        truth_v = truth_v[np.where(truth_v > -1)].reshape(-1)
+        link_pre_res['Val AP'] = average_precision_score(truth_v, y_pred_v)
+        link_pre_res['Val AUC'] = roc_auc_score(truth_v, y_pred_v)
         # test
-        heads_t, tails_t = g_t.find_edges(test_id)
-        src_t = logits_t[heads_t, :]
-        dst_t = logits_t[tails_t, :]
-        y_pred_t = nn.Sigmoid()((src_t * dst_t).sum(dim=1))
-        precision_t = (y_pred_t >= 0.5).float().sum() / test_id.shape[0]
-        return precision_v, precision_t
+        y_pred_t = nn.Sigmoid()(torch.matmul(logits_t, logits_t.T))
+        y_pred_t = y_pred_t.cpu().numpy()
+        truth_t = np.zeros((g_t.number_of_nodes(), g_t.number_of_nodes()))
+        truth_t[np.concatenate([head, head_v]), np.concatenate([tail, tail_v])] = -1
+        truth_t[head_t, tail_t] = 1
+        y_pred_t = y_pred_t[np.where(truth_t > -1)].reshape(-1)
+        truth_t = truth_t[np.where(truth_t > -1)].reshape(-1)
+        link_pre_res['Test AP'] = average_precision_score(truth_t, y_pred_t)
+        link_pre_res['Test AUC'] = roc_auc_score(truth_t, y_pred_t)
+        return link_pre_res
 
     # 训练、验证与测试
     n_epochs = args.num_epochs
@@ -114,8 +132,10 @@ def main(args):
     iter_neg = []
     iter_d = []
     iter_t = []
-    best_eval_precision = 0
-    best_test_precision = 0
+    best_eval_ap = 0
+    best_test_ap = 0
+    best_eval_auc = 0
+    best_test_auc = 0
     for epoch in range(n_epochs):
         time_epoch_0 = time.time()
         time_step = time.time()
@@ -156,16 +176,24 @@ def main(args):
         print('\n')
         print('Eval-ing...')
         time_ev_0 = time.time()
-        val_precision, test_precision = link_prediction(model, g_v, g_t, batch_size, val_eid, test_eid)
-        if val_precision > best_eval_precision:
-            best_eval_precision = val_precision
-            best_test_precision = test_precision
+        link_pre_res = link_prediction(model, g_v, g_t, batch_size, head, tail, head_v, tail_v, head_t, tail_t)
+        if link_pre_res['Val AUC'] > best_eval_auc:
+            best_eval_auc = link_pre_res['Val AUC']
+            best_eval_ap = link_pre_res['Val AP']
+            best_test_auc = link_pre_res['Test AUC']
+            best_test_ap = link_pre_res['Test AP']
         time_ev_1 = time.time()
-        print('Eval Precision {:.4f} | Test Precision {:.4f} | Eval Time(s): {:.4f}'.format(val_precision,
-                                                                                            test_precision,
-                                                                                            time_ev_1 - time_ev_0))
-        print('Best Eval Precision {:.4f} | Best Test Precision {:.4f}'.format(best_eval_precision,
-                                                                                best_test_precision))
+        print('Eval AUC {:.4f} | Eval AP {:.4f} | Test AUC {:.4f} |'
+              ' Test AP {:.4f} | Eval Time(s): {:.4f}'.format(link_pre_res['Val AUC'],
+                                                              link_pre_res['Val AP'],
+                                                              link_pre_res['Test AUC'],
+                                                              link_pre_res['Test AP'],
+                                                              time_ev_1 - time_ev_0))
+        print('Best Eval AUC {:.4f}, Eval AP {:.4f} |'
+              ' Best Test AUC {:.4f}, Test AP {:.4f}'.format(best_eval_auc,
+                                                             best_eval_ap,
+                                                             best_test_auc,
+                                                             best_test_ap))
 
         time_epoch_1 = time.time()
         print('Epoch Time(s): {:.4f}'.format(time_epoch_1 - time_epoch_0))
