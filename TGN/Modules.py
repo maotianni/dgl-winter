@@ -1,0 +1,139 @@
+import numpy as np
+import torch
+import torch.nn as nn
+
+
+class TimeEncode(torch.nn.Module):
+    def __init__(self, expand_dim):
+        super(TimeEncode, self).__init__()
+        time_dim = expand_dim
+        self.basis_freq = torch.nn.Parameter((torch.from_numpy(1 / 10 ** np.linspace(0, 9, time_dim))).float(),
+                                             requires_grad=False)
+        self.phase = torch.nn.Parameter(torch.zeros(time_dim).float(), requires_grad=False)
+
+    def forward(self, ts):
+        batch_size = ts.size(0)
+        ts = ts.view(batch_size, 1)  # [N, 1]
+        map_ts = ts * self.basis_freq.view(1, -1)  # [N, time_dim]
+        map_ts += self.phase.view(1, 1, -1)
+        # 三角变换
+        harmonic = torch.cos(map_ts)
+        return harmonic
+
+
+class Message(nn.Module):
+    def __init__(self, in_feats_m, in_feats_s, in_feats_t):
+        super(Message, self).__init__()
+        self.in_feats_m = in_feats_m
+        self.in_feats_s = in_feats_s
+        self.in_feats_t = in_feats_t
+        # Memory
+        self.gru = nn.GRU(self.in_feats_m, self.in_feats_s)
+        self.time = TimeEncode(self.in_feats_t)
+
+    def id_msg_func(self, edges):
+        si = edges.src['memory']
+        sj = edges.dst['memory']
+        t = edges.data['t']
+        time_emb = self.time(t)
+        e = edges.data['e']
+        out = torch.cat([si, sj, time_emb, e], dim=1)
+        return {'mail': out}
+
+    def last_reduce_func(self, nodes):
+        msgs = nodes.mailbox['mail'][-1, :]
+        return {'message': msgs}
+
+    def forward(self, g, g_r, si, sj, t, e):
+        g.local_var()
+        g_r.local_var()
+        g.srcdata['memory'], g_r.srcdata['memory'] = si, sj
+        g.edata['t'], g_r.edata['t'] = t, t
+        g.edata['e'], g_r.edata['e'] = e, e
+        g.dstdata['memory'], g_r.dstdata['memory'] = sj, si
+        g.update_all(message_func=self.id_msg_func, reduce_func=self.last_reduce_func)
+        g_r.update_all(message_func=self.id_msg_func, reduce_func=self.last_reduce_func)
+        mj, mi = g.dstdata['message'], g_r.dstdata['message']
+        _, si = self.gru(mi.view(1, g.number_of_nodes('user'), -1), si.view(1, g.number_of_nodes('user'), -1))
+        si = si.view(g.number_of_nodes('user'), -1)
+        _, sj = self.gru(mj.view(1, g.number_of_nodes('item'), -1), sj.view(1, g.number_of_nodes('item'), -1))
+        sj = sj.view(g.number_of_nodes('item'), -1)
+        return si, sj
+
+
+class NodeEmbeddingID(nn.Module):
+    def __init__(self, in_feats_u, in_feats_v, in_feats_t, in_feats_e, in_feats_s,
+                 num_heads, activation, dropout=0.0, use_cuda=False):
+        super(NodeEmbeddingID, self).__init__()
+        self.in_feats_u = in_feats_u
+        self.in_feats_v = in_feats_v
+        self.in_feats_t = in_feats_t
+        self.in_feats_e = in_feats_e
+        self.in_feats_s = in_feats_s
+        self.num_heads = num_heads
+        self.activation = activation
+        self.dropout = nn.Dropout(dropout)
+        self.use_cuda = use_cuda
+        # Modules
+        self.decompose_u = nn.Linear(self.in_feats_u, self.in_feats_s)
+        self.decompose_v = nn.Linear(self.in_feats_v, self.in_feats_s)
+        self.mlp = nn.Linear(self.in_feats_s + self.in_feats_s + self.in_feats_t, self.in_feats_s)
+        self.time = TimeEncode(self.in_feats_t)
+        self.attention = nn.MultiheadAttention(embed_dim=self.in_feats_s + self.in_feats_t,
+                                               num_heads=self.num_heads,
+                                               kdim=self.in_feats_s + self.in_feats_e + self.in_feats_t,
+                                               vdim=self.in_feats_s + self.in_feats_e + self.in_feats_t)
+
+    # Message Passing
+    def attn_msg_func(self, edges):
+        h = edges.src['h']
+        e = edges.data['e']
+        t0 = edges.dst['t0']
+        t = edges.data['t']
+        time_emb = self.time(t - t0)
+        out = torch.cat([h, e, time_emb], dim=1)
+        return {'mail': out}
+
+    def sum_reduce_func(self, nodes):
+        msgs = nodes.mailbox['mail']
+        out = torch.sum(msgs, dim=1)
+        return {'c': out}
+
+    def forward(self, g, g_r, g_n, si, sj, sn, e, t, vi, vj, vn):
+        # decompose
+        hi0, hj0, hn0 = self.decompose(vi), self.decompose(vj), self.decompose(vn)
+        hi = hi0 + si
+        hj = hj0 + sj
+        hn = hn0 + sn
+        g.local_var()
+        g_r.local_var()
+        g_n.local_var()
+        g.srcdata['h'], g_r.srcdata['h'], g_n = hi, hj, hi
+        g.edata['t'], g_r.edata['t'], g_n.edata['t'] = t, t, t
+        g.edata['e'], g_r.edata['e'], g_n.edata['e'] = e, e, e
+        g.update_all(message_func=self.attn_msg_func, reduce_func=self.sum_reduce_func)
+        g_r.update_all(message_func=self.attn_msg_func, reduce_func=self.sum_reduce_func)
+        g_n.update_all(message_func=self.attn_msg_func, reduce_func=self.sum_reduce_func)
+        # Attention, j
+        cj, ci, cn = g.dstdata['c'], g_r.dstdata['c'], g_n.dstdata['c']
+        kj = vj = cj
+        ki = vi = ci
+        kn = vn = cn
+        tj, ti = torch.zeros((g.number_of_nodes('item'), 1)), torch.zeros((g.number_of_nodes('user'), 1))
+        tn = torch.zeros((g.number_of_nodes('item'), 1))
+        if self.use_cuda:
+            tj, ti, tn = tj.cuda(), ti.cuda(), tn.cuda()
+        tj, ti, tn = self.time(tj), self.time(ti), self.time(tn)
+        qj, qi, qn = torch.cat([hj, tj]), torch.cat([hi, ti]), torch.cat([hn, tn])
+        hj_tmp, hi_tmp, hn_tmp = self.attention(qj, kj, vj), \
+                                 self.attention(qi, ki, vi), \
+                                 self.attention(qn, kn, vn)
+        hj, hi, hn = torch.cat([hj, hj_tmp]), \
+                     torch.cat([hi, hi_tmp]), \
+                     torch.cat([hn, hn_tmp])
+        if self.dropout:
+            hj, hi, hn = self.dropout(hj), self.dropout(hi), self.dropout(hn)
+        hj, hi, hn = self.mlp(hj), self.mlp(hi), self.mlp(hn)
+        if self.activation:
+            hj, hi, hn = self.activation(hj), self.activation(hi), self.activation(hn)
+        return hi, hj, hn
