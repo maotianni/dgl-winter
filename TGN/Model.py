@@ -24,5 +24,5 @@ class TGNBasic(nn.Module):
     def forward(self, g, g_r, g_n, si, sj, sn, e, t, vi, vj, vn):
         return self.compute_emb(g, g_r, g_n, si, sj, sn, e, t, vi, vj, vn)
 
-    def evolve_memory(self, g, g_r, si, sj, t, e):
+    def evolve(self, g, g_r, si, sj, t, e):
         return self.evolve_memory(g, g_r, si, sj, t, e)
