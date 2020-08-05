@@ -6,16 +6,16 @@ import torch.nn as nn
 class TimeEncode(torch.nn.Module):
     def __init__(self, expand_dim):
         super(TimeEncode, self).__init__()
-        time_dim = expand_dim
-        self.basis_freq = torch.nn.Parameter((torch.from_numpy(1 / 10 ** np.linspace(0, 9, time_dim))).float(),
+        self.time_dim = expand_dim
+        self.basis_freq = torch.nn.Parameter((torch.from_numpy(1 / 10 ** np.linspace(0, 9, self.time_dim))).float(),
                                              requires_grad=False)
-        self.phase = torch.nn.Parameter(torch.zeros(time_dim).float(), requires_grad=False)
+        self.phase = torch.nn.Parameter(torch.zeros(self.time_dim).float(), requires_grad=False)
 
     def forward(self, ts):
         batch_size = ts.size(0)
         ts = ts.view(batch_size, 1)  # [N, 1]
         map_ts = ts * self.basis_freq.view(1, -1)  # [N, time_dim]
-        map_ts += self.phase.view(1, 1, -1)
+        map_ts += self.phase.view(1, self.time_dim)
         # 三角变换
         harmonic = torch.cos(map_ts)
         return harmonic
@@ -41,7 +41,7 @@ class Message(nn.Module):
         return {'mail': out}
 
     def last_reduce_func(self, nodes):
-        msgs = nodes.mailbox['mail'][-1, :]
+        msgs = nodes.mailbox['mail'][:, -1, :]
         return {'message': msgs}
 
     def forward(self, g, g_r, si, sj, t, e):
@@ -85,52 +85,76 @@ class NodeEmbeddingID(nn.Module):
                                                vdim=self.in_feats_s + self.in_feats_e + self.in_feats_t)
 
     # Message Passing
+    # Message
     def attn_msg_func(self, edges):
         h = edges.src['h']
         e = edges.data['e']
         t0 = edges.dst['t0']
         t = edges.data['t']
-        time_emb = self.time(t - t0)
+        time_emb = self.time(t0 - t)
         out = torch.cat([h, e, time_emb], dim=1)
         return {'mail': out}
 
+    def pass_timestamp(self, edges):
+        timestamp = edges.data['t']
+        return {'t_mail': timestamp}
+
+    # reduce
     def sum_reduce_func(self, nodes):
         msgs = nodes.mailbox['mail']
         out = torch.sum(msgs, dim=1)
         return {'c': out}
 
+    def reduce_timestamp(self, nodes):
+        msgs = nodes.mailbox['t_mail']
+        out = torch.max(msgs, dim=1)[0]
+        return {'t0': out}
+
     def forward(self, g, g_r, g_n, si, sj, sn, e, t, vi, vj, vn):
         # decompose
-        hi0, hj0, hn0 = self.decompose(vi), self.decompose(vj), self.decompose(vn)
+        hi0, hj0, hn0 = self.decompose_u(vi), self.decompose_v(vj), self.decompose_v(vn)
         hi = hi0 + si
         hj = hj0 + sj
         hn = hn0 + sn
         g.local_var()
         g_r.local_var()
         g_n.local_var()
-        g.srcdata['h'], g_r.srcdata['h'], g_n = hi, hj, hi
+        g.srcdata['h'], g_r.srcdata['h'], g_n.srcdata['h'] = hi, hj, hi
         g.edata['t'], g_r.edata['t'], g_n.edata['t'] = t, t, t
         g.edata['e'], g_r.edata['e'], g_n.edata['e'] = e, e, e
+        # t0
+        g.update_all(message_func=self.pass_timestamp, reduce_func=self.reduce_timestamp)
+        g_r.update_all(message_func=self.pass_timestamp, reduce_func=self.reduce_timestamp)
+        g_n.update_all(message_func=self.pass_timestamp, reduce_func=self.reduce_timestamp)
+        # message passing
         g.update_all(message_func=self.attn_msg_func, reduce_func=self.sum_reduce_func)
         g_r.update_all(message_func=self.attn_msg_func, reduce_func=self.sum_reduce_func)
         g_n.update_all(message_func=self.attn_msg_func, reduce_func=self.sum_reduce_func)
         # Attention, j
         cj, ci, cn = g.dstdata['c'], g_r.dstdata['c'], g_n.dstdata['c']
-        kj = vj = cj
-        ki = vi = ci
-        kn = vn = cn
+        kj = vj = cj.view(1, -1, self.in_feats_s + self.in_feats_e + self.in_feats_t)
+        ki = vi = ci.view(1, -1, self.in_feats_s + self.in_feats_e + self.in_feats_t)
+        kn = vn = cn.view(1, -1, self.in_feats_s + self.in_feats_e + self.in_feats_t)
         tj, ti = torch.zeros((g.number_of_nodes('item'), 1)), torch.zeros((g.number_of_nodes('user'), 1))
-        tn = torch.zeros((g.number_of_nodes('item'), 1))
+        tn = torch.zeros((g_n.number_of_nodes('item'), 1))
         if self.use_cuda:
             tj, ti, tn = tj.cuda(), ti.cuda(), tn.cuda()
         tj, ti, tn = self.time(tj), self.time(ti), self.time(tn)
-        qj, qi, qn = torch.cat([hj, tj]), torch.cat([hi, ti]), torch.cat([hn, tn])
-        hj_tmp, hi_tmp, hn_tmp = self.attention(qj, kj, vj), \
-                                 self.attention(qi, ki, vi), \
-                                 self.attention(qn, kn, vn)
-        hj, hi, hn = torch.cat([hj, hj_tmp]), \
-                     torch.cat([hi, hi_tmp]), \
-                     torch.cat([hn, hn_tmp])
+        qj, qi, qn = torch.cat([hj, tj], dim=1), torch.cat([hi, ti], dim=1), torch.cat([hn, tn], dim=1)
+        qj = qj.view(1, -1, self.in_feats_s + self.in_feats_t)
+        qi = qi.view(1, -1, self.in_feats_s + self.in_feats_t)
+        qn = qn.view(1, -1, self.in_feats_s + self.in_feats_t)
+        # compute attention
+        hj_tmp, _ = self.attention(qj, kj, vj)
+        hi_tmp, _ = self.attention(qi, ki, vi)
+        hn_tmp, _ = self.attention(qn, kn, vn)
+        hj_tmp = hj_tmp.view(-1, self.in_feats_s + self.in_feats_t)
+        hi_tmp = hi_tmp.view(-1, self.in_feats_s + self.in_feats_t)
+        hn_tmp = hn_tmp.view(-1, self.in_feats_s + self.in_feats_t)
+        # compute embedding
+        hj, hi, hn = torch.cat([hj, hj_tmp], dim=1), \
+                     torch.cat([hi, hi_tmp], dim=1), \
+                     torch.cat([hn, hn_tmp], dim=1)
         if self.dropout:
             hj, hi, hn = self.dropout(hj), self.dropout(hi), self.dropout(hn)
         hj, hi, hn = self.mlp(hj), self.mlp(hi), self.mlp(hn)
