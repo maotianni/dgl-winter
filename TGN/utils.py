@@ -1,8 +1,10 @@
+import numpy as np
 import dgl
 import dgl.function as fn
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from scipy.sparse import coo_matrix
 
 
 # Loss
@@ -36,15 +38,21 @@ class Sample(object):
         heads, tails = head_b, tail_b
         neg_tails = self.weights.multinomial(self.num_negs * n_edges, replacement=True)
         neg_heads = torch.LongTensor(heads).view(-1, 1).expand(n_edges, self.num_negs).flatten()
-        pos_graph = dgl.bipartite((heads, tails), 'user', 'edit', 'item',
-                                  num_nodes=(self.g.number_of_nodes('user'), self.g.number_of_nodes('item')))
-        neg_graph = dgl.bipartite((neg_heads, neg_tails), 'user', 'edit', 'item',
-                                  num_nodes=(self.g.number_of_nodes('user'), self.g.number_of_nodes('item')))
-        pos_graph, neg_graph = dgl.compact_graphs([pos_graph, neg_graph])
+        spmat_p = coo_matrix((np.ones(heads.shape[0]), (heads, tails)),
+                             shape=(self.g.number_of_nodes('user'), self.g.number_of_nodes('item')))
+        spmat_pr = coo_matrix((np.ones(heads.shape[0]), (tails, heads)),
+                             shape=(self.g.number_of_nodes('item'), self.g.number_of_nodes('user')))
+        spmat_neg = coo_matrix((np.ones(heads.shape[0]), (neg_heads, neg_tails)),
+                             shape=(self.g.number_of_nodes('user'), self.g.number_of_nodes('item')))
+        pos_graph = dgl.bipartite(spmat_p, 'user', 'edit', 'item')
+        pos_graph_r = dgl.bipartite(spmat_pr, 'item', 'edit', 'user')
+        neg_graph = dgl.bipartite(spmat_neg, 'user', 'edit', 'item')
+        # pos_graph, neg_graph = dgl.compact_graphs([pos_graph, pos_graph_r, neg_graph]) 用了这句会删节点！
         # 可以读取NID
         pos_graph = pos_graph.edge_subgraph({('user', 'edit', 'item'): list(range(pos_graph.number_of_edges()))})
+        pos_graph_r = pos_graph_r.edge_subgraph({('item', 'edit', 'user'): list(range(pos_graph_r.number_of_edges()))})
         neg_graph = neg_graph.edge_subgraph({('user', 'edit', 'item'): list(range(neg_graph.number_of_edges()))})
-        return pos_graph, neg_graph, neg_tails
+        return pos_graph, pos_graph_r, neg_graph, neg_tails
 
 
 class LR_Classification(nn.Module):
@@ -73,3 +81,4 @@ class Link_Prediction(nn.Module):
             hid = F.relu(self.linear_2(hid))
         y_pred = F.sigmoid(self.linear_3(hid))
         return y_pred
+
