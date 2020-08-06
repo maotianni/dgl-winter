@@ -80,7 +80,7 @@ def main(args):
     if use_cuda:
         model.cuda()
     loss_func = utils.Unsuper_Cross_Entropy()
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.decay)
     model.train()
     # edge or learn
     '''
@@ -322,25 +322,26 @@ def main(args):
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser("TGN Reference")
     argparser.add_argument('--gpu', type=int, default=-1,
-        help="GPU device ID. Use -1 for CPU training")
-    argparser.add_argument('--dataset', type=str, default='wikipedia')
+                           help="GPU device ID. Use -1 for CPU training")
+    argparser.add_argument('--dataset', type=str, default='wikipedia',
+                           help='wikipedia or reddit')
     argparser.add_argument("--validation", default=False, action='store_true',
                            help="validation")
     argparser.add_argument('--learn', type=str, default='None',
                            help='future tasks, Link Prediction or Node Classification')
-    argparser.add_argument('--batch-size', type=int, default=1000)
-    argparser.add_argument('--batch-size-test', type=int, default=100)
-    argparser.add_argument('--num-heads', type=int, default=2)
+    argparser.add_argument('--batch-size', type=int, default=1000, help='batch size for training')
+    argparser.add_argument('--batch-size-test', type=int, default=100, help='batch size for evaling')
+    argparser.add_argument('--num-heads', type=int, default=2, help='Multi Head Attention heads')
     argparser.add_argument('--in-feats-t', type=int, default=100, help='time embedding feats')
     argparser.add_argument('--in-feats-s', type=int, default=100, help='memory feats')
-    argparser.add_argument('--dropout', type=float, default=0.3)
+    argparser.add_argument('--dropout', type=float, default=0.3, help='dropout rate')
     argparser.add_argument('--lr', type=float, default=0.001, help='lr for embedding')
-    argparser.add_argument('--lr-p', type=float, default=0.001, help='lr for future tasks')
-    argparser.add_argument('--decay', type=float, default=1e-4, help='l2 norm for future tasks')
-    argparser.add_argument('--n-epochs', type=int, default=50)
-    argparser.add_argument('--log-every', type=int, default=5)
-    argparser.add_argument('--eval-every', type=int, default=1)
-    argparser.add_argument('--num-neg', type=int, default=1)
+    argparser.add_argument('--lr-p', type=float, default=0.001, help='lr for future task(s)')
+    argparser.add_argument('--decay', type=float, default=1e-4, help='l2 norm for future task(s)')
+    argparser.add_argument('--n-epochs', type=int, default=50, help='number of epoch(s)')
+    argparser.add_argument('--log-every', type=int, default=5, help='print training results every xx step(s)')
+    argparser.add_argument('--eval-every', type=int, default=1, help='eval the model every xx epoch(s)')
+    argparser.add_argument('--num-neg', type=int, default=1, help='for each edge, sample xx negative node pairs')
 
     args = argparser.parse_args()
     print(args)
