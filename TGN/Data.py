@@ -3,11 +3,11 @@ import numpy as np
 import torch
 
 
-def load_wiki(val):
+def load_data(dataset, val):
     # 读取
-    data = pd.read_csv('..\data\wikipedia.csv', skiprows=[0], header=None)
+    data = pd.read_csv('..\data\{}.csv'.format(dataset), skiprows=[0], header=None)
     # 列名
-    columns = pd.read_csv('..\data\wikipedia.csv', nrows=1, header=None)
+    columns = pd.read_csv('..\data\{}.csv'.format(dataset), nrows=1, header=None)
     # 替换列名
     columns_n = [''] * data.shape[1]
     columns_n[:4] = columns.values[0].tolist()[:4]
@@ -27,7 +27,7 @@ def load_wiki(val):
     features_v = torch.Tensor(items.values)
     features_e = torch.Tensor(data.iloc[:, 4:].values)
     t = torch.Tensor(data['timestamp'])
-    label = torch.Tensor(data['state_label'])
+    label = torch.LongTensor(data['state_label'])
     # train-val-test
     test_split = np.floor(data.shape[0] * 0.85).astype('int64')
     val_split = np.floor(data.shape[0] * 0.70).astype('int64')
@@ -48,9 +48,14 @@ def load_wiki(val):
         out['train'] = (head, tail)
         out['val'] = (head_v, tail_v)
         out['test'] = (head_t, tail_t)
+        out['n_train'] = head.shape[0]
+        out['n_val'] = head_v.shape[0]
+        out['n_test'] = head_t.shape[0]
     else:
         out['train'] = (head_a, tail_a)
         out['test'] = (head_t, tail_t)
+        out['n_train'] = head.shape[0]
+        out['n_test'] = head_t.shape[0]
     return out
 
 
@@ -58,8 +63,7 @@ class LoadData(object):
     def __init__(self, dataset, val=False):
         self.dataset = dataset
         self.val = val
-        if self.dataset == 'wikipedia':
-            self.loader = load_wiki(self.val)
+        self.loader = load_data(self.dataset, self.val)
         self.n_users = self.loader['n_users']
         self.n_items = self.loader['n_items']
         self.u_feats = self.loader['u_feats']
@@ -70,6 +74,9 @@ class LoadData(object):
         self.t = self.loader['t']
         self.label = self.loader['label']
         self.train = self.loader['train']
+        self.n_train = self.loader['n_train']
         if self.val:
             self.val = self.loader['val']
+            self.n_val = self.loader['n_val']
         self.test = self.loader['test']
+        self.n_test = self.loader['n_test']
