@@ -14,8 +14,22 @@
 * Basic Strategy的框架
 * Basic Strategy的训练
 
-## 具体选项
+## 目录结构
+* 这里脚本文件为根目录，其与数据集位置的关系如下：
+```{txt}
+├── ..                          // 父目录
+    ├── data
+    |   ├── wikipedia.csv               
+    |   └── reddit.csv
+    └── .                       // 当前目录
+        ├── Data.py             // 预处理数据集，获取并存储数据集信息
+        ├── utils.py            // 训练或验证时用到的采样、损失函数，以及训练完节点嵌入后进行的后续任务的前向传播模型
+        ├── Modules.py          // 训练节点嵌入所需要用到的各个模块，包括Time Embedding、Message Passing and Node Memory、Node Embedding
+        ├── Model.py            // 模型的框架
+        └── Train.py            // 主程序，包括模型的训练、验证、测试
+```
 
+## 具体选项
 ```{txt}
 optional arguments:
   -h, --help            show this help message and exit
