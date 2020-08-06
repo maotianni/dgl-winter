@@ -22,11 +22,13 @@ class TimeEncode(torch.nn.Module):
 
 
 class Message(nn.Module):
-    def __init__(self, in_feats_m, in_feats_s, in_feats_t, use_cuda=False):
+    def __init__(self, in_feats_m, in_feats_s, in_feats_t, activation, dropout=0.0, use_cuda=False):
         super(Message, self).__init__()
         self.in_feats_m = in_feats_m
         self.in_feats_s = in_feats_s
         self.in_feats_t = in_feats_t
+        self.activation = activation
+        self.dropout = nn.Dropout(dropout)
         self.use_cuda = use_cuda
         # Memory
         self.gru = nn.GRU(self.in_feats_m, self.in_feats_s)
@@ -59,6 +61,12 @@ class Message(nn.Module):
         si = si.view(g.number_of_nodes('user'), -1)
         _, sj = self.gru(mj.view(1, g.number_of_nodes('item'), -1), sj.view(1, g.number_of_nodes('item'), -1))
         sj = sj.view(g.number_of_nodes('item'), -1)
+        if self.dropout:
+            si = self.dropout(si)
+            sj = self.dropout(sj)
+        if self.activation:
+            si = self.activation(si)
+            sj = self.activation(sj)
         return si, sj
 
 
@@ -117,6 +125,12 @@ class NodeEmbeddingID(nn.Module):
         hi = hi0 + si
         hj = hj0 + sj
         hn = hn0 + sn
+        # activation
+        if self.activation:
+            hi = self.activation(hi)
+            hj = self.activation(hj)
+            hn = self.activation(hn)
+        # feats
         g.local_var()
         g_r.local_var()
         g_n.local_var()
