@@ -54,16 +54,16 @@ def load_data(dataset, val):
     else:
         out['train'] = (head_a, tail_a)
         out['test'] = (head_t, tail_t)
-        out['n_train'] = head.shape[0]
+        out['n_train'] = head_a.shape[0]
         out['n_test'] = head_t.shape[0]
     return out
 
 
 class LoadData(object):
-    def __init__(self, dataset, val=False):
+    def __init__(self, dataset, validation=False):
         self.dataset = dataset
-        self.val = val
-        self.loader = load_data(self.dataset, self.val)
+        self.validation = validation
+        self.loader = load_data(self.dataset, self.validation)
         self.n_users = self.loader['n_users']
         self.n_items = self.loader['n_items']
         self.u_feats = self.loader['u_feats']
@@ -75,7 +75,7 @@ class LoadData(object):
         self.label = self.loader['label']
         self.train = self.loader['train']
         self.n_train = self.loader['n_train']
-        if self.val:
+        if self.validation:
             self.val = self.loader['val']
             self.n_val = self.loader['n_val']
         self.test = self.loader['test']
