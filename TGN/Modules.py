@@ -22,11 +22,12 @@ class TimeEncode(torch.nn.Module):
 
 
 class Message(nn.Module):
-    def __init__(self, in_feats_m, in_feats_s, in_feats_t):
+    def __init__(self, in_feats_m, in_feats_s, in_feats_t, use_cuda=False):
         super(Message, self).__init__()
         self.in_feats_m = in_feats_m
         self.in_feats_s = in_feats_s
         self.in_feats_t = in_feats_t
+        self.use_cuda = use_cuda
         # Memory
         self.gru = nn.GRU(self.in_feats_m, self.in_feats_s)
         self.time = TimeEncode(self.in_feats_t)
