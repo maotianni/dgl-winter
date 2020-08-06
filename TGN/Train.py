@@ -236,7 +236,7 @@ def main(args):
                                                   n_users, n_items, in_feats_s, use_cuda, gpu)
                     if epoch > 0:
                         eval_res['eval_ap'].append(link_pre_res['AP'])
-                    if epoch >= 20 and link_pre_res['AP'] < eval_res['eval_ap'][-10]:
+                    if epoch >= 20 and link_pre_res['AP'] < min(eval_res['eval_ap'][-10:]):
                         break
                     if epoch > 0 and link_pre_res['AP'] > eval_res['best_eval_ap']:
                         eval_res['best_eval_ap'] = link_pre_res['AP']
@@ -264,7 +264,7 @@ def main(args):
                                                     n_users, n_items, in_feats_s, use_cuda, gpu)
                     if epoch > 0:
                         eval_res['eval_auc'].append(node_cls_res['AUC'])
-                    if epoch >= 20 and node_cls_res['AUC'] < eval_res['eval_auc'][-10]:
+                    if epoch >= 20 and node_cls_res['AUC'] < min(eval_res['eval_auc'][-10:]):
                         break
                     if epoch > 0 and node_cls_res['AUC'] > eval_res['best_eval_auc']:
                         eval_res['best_eval_auc'] = node_cls_res['AUC']
@@ -285,7 +285,7 @@ def main(args):
                                                   features_e, t, n_users, n_items, in_feats_s, use_cuda, gpu)
                     if epoch > 0:
                         eval_res['test_ap'].append(link_pre_res['AP'])
-                    if epoch >= 20 and link_pre_res['AP'] < eval_res['test_ap'][-10]:
+                    if epoch >= 20 and link_pre_res['AP'] < min(eval_res['test_ap'][-10:]):
                         break
                     if epoch > 0 and link_pre_res['AP'] > eval_res['best_test_ap']:
                         eval_res['best_test_ap'] = link_pre_res['AP']
@@ -302,7 +302,7 @@ def main(args):
                                                     t, label, n_users, n_items, in_feats_s, use_cuda, gpu)
                     if epoch > 0:
                         eval_res['test_auc'].append(node_cls_res['AUC'])
-                    if epoch >= 20 and node_cls_res['AUC'] < eval_res['test_auc'][-10]:
+                    if epoch >= 20 and node_cls_res['AUC'] < min(eval_res['test_auc'][-10:]):
                         break
                     if epoch > 0 and node_cls_res['AUC'] > eval_res['best_test_auc']:
                         eval_res['best_test_auc'] = node_cls_res['AUC']
