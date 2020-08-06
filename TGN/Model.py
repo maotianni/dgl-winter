@@ -19,7 +19,8 @@ class TGNBasic(nn.Module):
         self.compute_emb = NodeEmbeddingID(self.in_feats_u, self.in_feats_v, self.in_feats_t,
                                            self.in_feats_e, self.in_feats_s, self.num_heads,
                                            self.activation, self.dropout, self.use_cuda)
-        self.evolve_memory = Message(self.in_feats_m, self.in_feats_s, self.in_feats_t)
+        self.evolve_memory = Message(self.in_feats_m, self.in_feats_s, self.in_feats_t,
+                                     self.activation, self.dropout, self.use_cuda)
 
     def forward(self, g, g_r, g_n, si, sj, sn, e, t, vi, vj, vn):
         return self.compute_emb(g, g_r, g_n, si, sj, sn, e, t, vi, vj, vn)
