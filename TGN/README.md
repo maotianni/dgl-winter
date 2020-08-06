@@ -20,22 +20,27 @@
 optional arguments:
   -h, --help            show this help message and exit
   --gpu GPU             GPU device ID. Use -1 for CPU training
-  --dataset DATASET
+  --dataset DATASET     wikipedia or reddit
   --validation          validation
   --learn LEARN         future tasks, Link Prediction or Node Classification
   --batch-size BATCH_SIZE
+                        batch size for training
   --batch-size-test BATCH_SIZE_TEST
+                        batch size for evaling
   --num-heads NUM_HEADS
+                        Multi Head Attention heads
   --in-feats-t IN_FEATS_T
                         time embedding feats
   --in-feats-s IN_FEATS_S
                         memory feats
-  --dropout DROPOUT
+  --dropout DROPOUT     dropout rate
   --lr LR               lr for embedding
-  --lr-p LR_P           lr for future tasks
-  --decay DECAY         l2 norm for future tasks
-  --n-epochs N_EPOCHS
+  --lr-p LR_P           lr for future task(s)
+  --decay DECAY         l2 norm for future task(s)
+  --n-epochs N_EPOCHS   number of epoch(s)
   --log-every LOG_EVERY
+                        print training results every xx step(s)
   --eval-every EVAL_EVERY
-  --num-neg NUM_NEG
+                        eval the model every xx epoch(s)
+  --num-neg NUM_NEG     for each edge, sample xx negative node pairs
 ```
