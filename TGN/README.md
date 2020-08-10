@@ -11,8 +11,12 @@
 * tqdm == 4.47.0
 
 ## 目前完成进度
-* Basic Strategy的框架
-* Basic Strategy的训练
+* Basic & Advanced Strategy的框架
+* Basic & Advanced Strategy的训练与验证
+
+## 待完成
+* 具体的Setting的完善
+* Align原文的超参数
 
 ## 目录结构
 * 这里脚本文件所在位置为根目录，其与数据集位置的关系如下：
