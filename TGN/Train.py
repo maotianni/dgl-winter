@@ -76,7 +76,7 @@ def main(args):
 
     # model, loss function, optimizer
     model = Model.TGNBasic(in_feats_m, in_feats_u, in_feats_v, in_feats_t,
-                           in_feats_e, in_feats_s, num_heads, activation=F.relu, dropout=args.dropout, use_cuda=use_cuda)
+                           in_feats_e, in_feats_s, num_heads, activation=torch.tanh, dropout=args.dropout, use_cuda=use_cuda)
     if use_cuda:
         model.cuda()
     loss_func = utils.Unsuper_Cross_Entropy()
@@ -346,3 +346,4 @@ if __name__ == '__main__':
     args = argparser.parse_args()
     print(args)
     main(args)
+
