@@ -103,7 +103,7 @@ class GraphNC(nn.Module):
 # evaluation-nc
 def node_class(model, nc, sampler, n_train, head_t, tail_t, batch_size_test,
              features_u, features_v, features_e, t, label,
-             n_users, n_items, in_feats_s, use_cuda=False, gpu=-1):
+             n_users, n_items, in_feats_s, use_cuda=False, gpu=-1, advanced=False):
     score = np.zeros(head_t.shape[0])
     print('Start Node Classification...')
     model.eval()
@@ -138,11 +138,17 @@ def node_class(model, nc, sampler, n_train, head_t, tail_t, batch_size_test,
             e_b = features_e[start + n_train: end + n_train]
             t_b = t[start + n_train: end + n_train]
             # forward
-            zi_b, zj_b, zn_b = model.forward(pos_graph, pos_graph_r, neg_graph,
-                                             si_b, sj_b, sn_b,
-                                             e_b, t_b,
-                                             vi_b, vj_b, vn_b)
-            si_b2, sj_b2 = model.evolve(pos_graph, pos_graph_r, si_b, sj_b, t_b, e_b)
+            if advanced:
+                zi_b, zj_b, zn_b, si_b2, sj_b2 = model.infer(pos_graph, pos_graph_r, neg_graph,
+                                                             si_b, sj_b, sn_b,
+                                                             e_b, t_b,
+                                                             vi_b, vj_b, vn_b)
+            else:
+                zi_b, zj_b, zn_b = model.forward(pos_graph, pos_graph_r, neg_graph,
+                                                 si_b, sj_b, sn_b,
+                                                 e_b, t_b,
+                                                 vi_b, vj_b, vn_b)
+                si_b2, sj_b2 = model.evolve(pos_graph, pos_graph_r, si_b, sj_b, t_b, e_b)
             # output
             si[head_id], sj[tail_id] = si_b2, sj_b2
             zi[head_id], zj[tail_id] = zi_b, zj_b
@@ -208,7 +214,7 @@ class GraphLP(nn.Module):
 # evaluation-lp
 def link_pre(model, sampler, n_train, head_t, tail_t, batch_size_test,
              features_u, features_v, features_e, t,
-             n_users, n_items, in_feats_s, use_cuda=False, gpu=-1):
+             n_users, n_items, in_feats_s, use_cuda=False, gpu=-1, advanced=False):
     val_ap, val_auc = [], []
     print('Start Link Prediction...')
     model.eval()
@@ -242,11 +248,17 @@ def link_pre(model, sampler, n_train, head_t, tail_t, batch_size_test,
             e_b = features_e[start + n_train: end + n_train]
             t_b = t[start + n_train: end + n_train]
             # forward
-            zi_b, zj_b, zn_b = model.forward(pos_graph, pos_graph_r, neg_graph,
-                                             si_b, sj_b, sn_b,
-                                             e_b, t_b,
-                                             vi_b, vj_b, vn_b)
-            si_b2, sj_b2 = model.evolve(pos_graph, pos_graph_r, si_b, sj_b, t_b, e_b)
+            if advanced:
+                zi_b, zj_b, zn_b, si_b2, sj_b2 = model.infer(pos_graph, pos_graph_r, neg_graph,
+                                                             si_b, sj_b, sn_b,
+                                                             e_b, t_b,
+                                                             vi_b, vj_b, vn_b)
+            else:
+                zi_b, zj_b, zn_b = model.forward(pos_graph, pos_graph_r, neg_graph,
+                                                 si_b, sj_b, sn_b,
+                                                 e_b, t_b,
+                                                 vi_b, vj_b, vn_b)
+                si_b2, sj_b2 = model.evolve(pos_graph, pos_graph_r, si_b, sj_b, t_b, e_b)
             # output
             si[head_id], sj[tail_id] = si_b2, sj_b2
             zi[head_id], zj[tail_id] = zi_b, zj_b
