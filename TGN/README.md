@@ -26,7 +26,8 @@
         ├── utils.py            // 训练或验证时用到的采样、损失函数，以及训练完节点嵌入后进行的后续任务的前向传播模型
         ├── Modules.py          // 训练节点嵌入所需要用到的各个模块，包括Time Embedding、Message Passing and Node Memory、Node Embedding
         ├── Model.py            // 模型的框架
-        └── Train.py            // 主程序，包括模型的训练、验证、测试
+        ├── Train.py            // 主程序，包括模型的训练、验证、测试
+        └── Train_Advanced.py   // 主程序（Advanced方法）
 ```
 
 ## 具体选项
