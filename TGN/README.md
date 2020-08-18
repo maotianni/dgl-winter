@@ -4,15 +4,11 @@
 * Python == 3.7.5
 * dgl == 0.4.3.post2 (nightly)
 * torch == 1.6.0
-* pandas == 1.0.5
+* pandas == 1.1.0
 * numpy == 1.19.0+mkl
 * scipy == 1.5.1
 * sklearn == 0.23.1
 * tqdm == 4.47.0
-
-## 目前完成进度
-* Basic & Advanced Strategy的框架
-* Basic & Advanced Strategy的训练与验证
 
 ## 待完成
 * 具体的Setting的完善
@@ -31,7 +27,8 @@
         ├── Modules.py          // 训练节点嵌入所需要用到的各个模块，包括Time Embedding、Message Passing and Node Memory、Node Embedding
         ├── Model.py            // 模型的框架
         ├── Train.py            // 主程序，包括模型的训练、验证、测试
-        └── Train_Advanced.py   // 主程序（Advanced方法）
+        ├── Train_Advanced.py   // 主程序（Advanced方法）
+        └── NodeCL.py           // 节点分类部分，直接运行可以调用预训练好的embedding参数，直接进行节点分类任务
 ```
 
 ## 具体选项
@@ -41,6 +38,7 @@ optional arguments:
   --gpu GPU             GPU device ID. Use -1 for CPU training
   --dataset DATASET     wikipedia or reddit
   --validation          validation
+  --inductive           inductive
   --learn LEARN         future tasks, Link Prediction or Node Classification
   --batch-size BATCH_SIZE
                         batch size for training
@@ -52,6 +50,8 @@ optional arguments:
                         time embedding feats
   --in-feats-s IN_FEATS_S
                         memory feats
+  --out-feats OUT_FEATS
+                        node embedding feats
   --dropout DROPOUT     dropout rate
   --lr LR               lr for embedding
   --lr-p LR_P           lr for future task(s)
