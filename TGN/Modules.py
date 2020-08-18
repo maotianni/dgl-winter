@@ -73,7 +73,7 @@ class Message(nn.Module):
 
 # Basic TGN (Embedding)
 class NodeEmbeddingID(nn.Module):
-    def __init__(self, in_feats_u, in_feats_v, in_feats_t, in_feats_e, in_feats_s,
+    def __init__(self, in_feats_u, in_feats_v, in_feats_t, in_feats_e, in_feats_s, out_feats,
                  num_heads, activation, dropout=0.0, use_cuda=False):
         super(NodeEmbeddingID, self).__init__()
         self.in_feats_u = in_feats_u
@@ -81,6 +81,7 @@ class NodeEmbeddingID(nn.Module):
         self.in_feats_t = in_feats_t
         self.in_feats_e = in_feats_e
         self.in_feats_s = in_feats_s
+        self.out_feats = out_feats
         self.num_heads = num_heads
         self.activation = activation
         self.dropout = nn.Dropout(dropout)
@@ -88,7 +89,7 @@ class NodeEmbeddingID(nn.Module):
         # Modules
         self.decompose_u = nn.Linear(self.in_feats_u, self.in_feats_s)
         self.decompose_v = nn.Linear(self.in_feats_v, self.in_feats_s)
-        self.mlp = nn.Linear(self.in_feats_s + self.in_feats_s + self.in_feats_t, self.in_feats_s)
+        self.mlp = nn.Linear(self.in_feats_s + self.in_feats_s + self.in_feats_t, self.out_feats)
         self.time = TimeEncode(self.in_feats_t)
         self.attention = nn.MultiheadAttention(embed_dim=self.in_feats_s + self.in_feats_t,
                                                num_heads=self.num_heads,
@@ -182,7 +183,7 @@ class NodeEmbeddingID(nn.Module):
 
 # Advanced TGN
 class MessageNEmbedding(nn.Module):
-    def __init__(self, in_feats_u, in_feats_v, in_feats_m, in_feats_t, in_feats_e, in_feats_s,
+    def __init__(self, in_feats_u, in_feats_v, in_feats_m, in_feats_t, in_feats_e, in_feats_s, out_feats,
                  num_heads, activation, dropout=0.0, use_cuda=False):
         super(MessageNEmbedding, self).__init__()
         self.in_feats_u = in_feats_u
@@ -191,6 +192,7 @@ class MessageNEmbedding(nn.Module):
         self.in_feats_t = in_feats_t
         self.in_feats_e = in_feats_e
         self.in_feats_s = in_feats_s
+        self.out_feats = out_feats
         self.num_heads = num_heads
         self.activation = activation
         self.dropout = nn.Dropout(dropout)
@@ -201,7 +203,7 @@ class MessageNEmbedding(nn.Module):
         # Modules
         self.decompose_u = nn.Linear(self.in_feats_u, self.in_feats_s)
         self.decompose_v = nn.Linear(self.in_feats_v, self.in_feats_s)
-        self.mlp = nn.Linear(self.in_feats_s + self.in_feats_s + self.in_feats_t, self.in_feats_s)
+        self.mlp = nn.Linear(self.in_feats_s + self.in_feats_s + self.in_feats_t, self.out_feats)
         self.attention = nn.MultiheadAttention(embed_dim=self.in_feats_s + self.in_feats_t,
                                                num_heads=self.num_heads,
                                                kdim=self.in_feats_s + self.in_feats_e + self.in_feats_t,
@@ -420,3 +422,4 @@ class MessageNEmbedding(nn.Module):
         if self.activation:
             hj, hi, hn = self.activation(hj), self.activation(hi), self.activation(hn)
         return hi, hj, hn, si, sj
+
