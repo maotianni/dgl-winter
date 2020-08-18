@@ -60,30 +60,27 @@ class Sample(object):
 
 # 节点分类
 class LR_Classification(nn.Module):
-    def __init__(self, in_feats, hid_feats, n_layers=2, dropout=0.0):
+    def __init__(self, in_feats, hid_feats_1, hid_feats_2, dropout=0.0):
         super(LR_Classification, self).__init__()
-        self.n_layers = n_layers
-        self.linear_1 = nn.Linear(in_feats, hid_feats)
-        self.linear_2 = nn.Linear(hid_feats, hid_feats)
-        self.linear_3 = nn.Linear(hid_feats, 1)
-        self.dropout = nn.Dropout(dropout)
+        self.linear_1 = nn.Linear(in_feats, hid_feats_1)
+        self.linear_2 = nn.Linear(hid_feats_1, hid_feats_2)
+        self.linear_3 = nn.Linear(hid_feats_2, 1)
+        self.dropout = nn.Dropout(p=dropout, inplace=True)
 
     def forward(self, X):
         hid = F.relu(self.linear_1(X))
         hid = self.dropout(hid)
-        for layer in range(self.n_layers - 2):
-            hid = F.relu(self.linear_2(hid))
-            hid = self.dropout(hid)
-        hid = self.linear_3(hid)
+        hid = F.relu(self.linear_2(hid))
         hid = self.dropout(hid)
+        hid = self.linear_3(hid)
         y_pred = torch.sigmoid(hid)
         return y_pred
 
 
 class GraphNC(nn.Module):
-    def __init__(self, in_feats, hid_feats):
+    def __init__(self, in_feats, hid_feats_1, hid_feats_2, dropout=0.3):
         super(GraphNC, self).__init__()
-        self.nc = LR_Classification(in_feats, hid_feats, dropout=0.3)
+        self.nc = LR_Classification(in_feats, hid_feats_1, hid_feats_2, dropout)
 
     def edge_cat(self, edges):
         hi = edges.src['z']
@@ -103,14 +100,14 @@ class GraphNC(nn.Module):
 # evaluation-nc
 def node_class(model, nc, sampler, n_train, head_t, tail_t, batch_size_test,
              features_u, features_v, features_e, t, label,
-             n_users, n_items, in_feats_s, use_cuda=False, gpu=-1, advanced=False):
+             n_users, n_items, in_feats_s, out_feats, use_cuda=False, gpu=-1, advanced=False):
     score = np.zeros(head_t.shape[0])
     print('Start Node Classification...')
-    model.eval()
+    #model.eval()
     nc.eval()
     with torch.no_grad():
         si, sj = torch.zeros(n_users, in_feats_s), torch.zeros(n_items, in_feats_s)
-        zi, zj = torch.zeros(n_users, in_feats_s), torch.zeros(n_items, in_feats_s)
+        zi, zj = torch.zeros(n_users, out_feats), torch.zeros(n_items, out_feats)
         ## cuda
         if use_cuda:
             si, sj = si.cuda(), sj.cuda()
@@ -155,7 +152,7 @@ def node_class(model, nc, sampler, n_train, head_t, tail_t, batch_size_test,
             # eval
             sc = nc(zi_b, zj_b, pos_graph).view(-1).cpu().numpy()
             score[start: end] = sc
-    model.train()
+    #model.train()
     nc.train()
     auc = roc_auc_score(label[n_train:].cpu().numpy(), score)
     res = {'AUC': auc}
@@ -214,13 +211,14 @@ class GraphLP(nn.Module):
 # evaluation-lp
 def link_pre(model, sampler, n_train, head_t, tail_t, batch_size_test,
              features_u, features_v, features_e, t,
-             n_users, n_items, in_feats_s, use_cuda=False, gpu=-1, advanced=False):
+             n_users, n_items, in_feats_s, out_feats, inductive=False, new_id=None,
+             use_cuda=False, gpu=-1, advanced=False):
     val_ap, val_auc = [], []
     print('Start Link Prediction...')
     model.eval()
     with torch.no_grad():
         si, sj = torch.zeros(n_users, in_feats_s), torch.zeros(n_items, in_feats_s)
-        zi, zj = torch.zeros(n_users, in_feats_s), torch.zeros(n_items, in_feats_s)
+        zi, zj = torch.zeros(n_users, out_feats), torch.zeros(n_items, out_feats)
         ## cuda
         if use_cuda:
             si, sj = si.cuda(), sj.cuda()
@@ -271,11 +269,18 @@ def link_pre(model, sampler, n_train, head_t, tail_t, batch_size_test,
             neg_graph.dstdata['z'] = zn_b
             neg_graph.apply_edges(fn.u_dot_v('z', 'z', 'score'))
             neg_score = neg_graph.edata['score']
+            # inductive
+            if inductive:
+                id_tmp = new_id[start:end]
+                pos_score = pos_score[np.where(id_tmp == 1)]
+                neg_score = neg_score[np.where(id_tmp == 1)]
             # metrics
             score = torch.cat([pos_score, neg_score]).view(-1, 1).cpu().numpy()
             target = torch.cat([torch.ones(pos_score.shape[0]), torch.zeros(neg_score.shape[0])]).cpu().numpy()
-            val_ap.append(average_precision_score(target, score))
-            val_auc.append(roc_auc_score(target, score))
+            if len(pos_score) > 0:
+                val_ap.append(average_precision_score(target, score))
+                val_auc.append(roc_auc_score(target, score))
     model.train()
     res = {'AP': np.mean(val_ap), 'AUC': np.mean(val_auc)}
     return res
+
