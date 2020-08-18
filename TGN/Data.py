@@ -40,6 +40,17 @@ def load_data(dataset, val):
     head_a, tail_a = all_train_set['user_id'].values, all_train_set['item_id'].values
     head_v, tail_v = val_set['user_id'].values, val_set['item_id'].values
     head_t, tail_t = test_set['user_id'].values, test_set['item_id'].values
+    # inductive
+    new_val_h, new_val_t = set(head_v) - set(head), set(tail_v) - set(tail)
+    new_test_h, new_test_t = set(head_t) - set(head_a), set(tail_t) - set(tail_a)
+    new_val_id = np.zeros(head_v.shape[0])
+    new_test_id = np.zeros(head_t.shape[0])
+    for i in range(head_v.shape[0]):
+        if head_v[i] in new_val_h or tail_v[i] in new_val_t:
+            new_val_id[i] = 1
+    for j in range(head_t.shape[0]):
+        if head_t[j] in new_test_h or tail_t[j] in new_test_t:
+            new_test_id[j] = 1
     # dict
     out = {'features_u': features_u, 'features_v': features_v,
            'n_users': n_users, 'n_items': n_items, 'u_feats': users.shape[0], 'v_feats': items.shape[0],
@@ -48,12 +59,15 @@ def load_data(dataset, val):
         out['train'] = (head, tail)
         out['val'] = (head_v, tail_v)
         out['test'] = (head_t, tail_t)
+        out['new_val'] = new_val_id
+        out['new_test'] = new_test_id
         out['n_train'] = head.shape[0]
         out['n_val'] = head_v.shape[0]
         out['n_test'] = head_t.shape[0]
     else:
         out['train'] = (head_a, tail_a)
         out['test'] = (head_t, tail_t)
+        out['new_test'] = np.array(new_test_id)
         out['n_train'] = head_a.shape[0]
         out['n_test'] = head_t.shape[0]
     return out
@@ -78,5 +92,7 @@ class LoadData(object):
         if self.validation:
             self.val = self.loader['val']
             self.n_val = self.loader['n_val']
+            self.new_val = self.loader['new_val']
         self.test = self.loader['test']
         self.n_test = self.loader['n_test']
+        self.new_test = self.loader['new_test']
