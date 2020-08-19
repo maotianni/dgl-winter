@@ -23,12 +23,13 @@ class TimeEncode(torch.nn.Module):
 
 # Basic TGN (Message)
 class Message(nn.Module):
-    def __init__(self, in_feats_m, in_feats_s, in_feats_t, activation, dropout=0.0, use_cuda=False):
+    def __init__(self, in_feats_m, in_feats_s, in_feats_t, activation, method='last', dropout=0.0, use_cuda=False):
         super(Message, self).__init__()
         self.in_feats_m = in_feats_m
         self.in_feats_s = in_feats_s
         self.in_feats_t = in_feats_t
         self.activation = activation
+        self.method = method
         self.dropout = nn.Dropout(dropout)
         self.use_cuda = use_cuda
         # Memory
@@ -48,6 +49,11 @@ class Message(nn.Module):
         msgs = nodes.mailbox['mail'][:, -1, :]
         return {'message': msgs}
 
+    def mean_reduce_func(self, nodes):
+        msgs = nodes.mailbox['mail']
+        out = torch.mean(msgs, dim=1)
+        return {'message': out}
+
     def forward(self, g, g_r, si, sj, t, e):
         g.local_var()
         g_r.local_var()
@@ -55,8 +61,12 @@ class Message(nn.Module):
         g.edata['t'], g_r.edata['t'] = t, t
         g.edata['e'], g_r.edata['e'] = e, e
         g.dstdata['memory'], g_r.dstdata['memory'] = sj, si
-        g.update_all(message_func=self.id_msg_func, reduce_func=self.last_reduce_func)
-        g_r.update_all(message_func=self.id_msg_func, reduce_func=self.last_reduce_func)
+        if self.method == 'last':
+            g.update_all(message_func=self.id_msg_func, reduce_func=self.last_reduce_func)
+            g_r.update_all(message_func=self.id_msg_func, reduce_func=self.last_reduce_func)
+        elif self.method == 'mean':
+            g.update_all(message_func=self.id_msg_func, reduce_func=self.mean_reduce_func)
+            g_r.update_all(message_func=self.id_msg_func, reduce_func=self.mean_reduce_func)
         mj, mi = g.dstdata['message'], g_r.dstdata['message']
         _, si = self.gru(mi.view(1, g.number_of_nodes('user'), -1), si.view(1, g.number_of_nodes('user'), -1))
         si = si.view(g.number_of_nodes('user'), -1)
@@ -184,7 +194,7 @@ class NodeEmbeddingID(nn.Module):
 # Advanced TGN
 class MessageNEmbedding(nn.Module):
     def __init__(self, in_feats_u, in_feats_v, in_feats_m, in_feats_t, in_feats_e, in_feats_s, out_feats,
-                 num_heads, activation, dropout=0.0, use_cuda=False):
+                 num_heads, activation, method='last', dropout=0.0, use_cuda=False):
         super(MessageNEmbedding, self).__init__()
         self.in_feats_u = in_feats_u
         self.in_feats_v = in_feats_v
@@ -195,6 +205,7 @@ class MessageNEmbedding(nn.Module):
         self.out_feats = out_feats
         self.num_heads = num_heads
         self.activation = activation
+        self.method = method
         self.dropout = nn.Dropout(dropout)
         self.use_cuda = use_cuda
         # Memory
@@ -244,7 +255,10 @@ class MessageNEmbedding(nn.Module):
     ## Reduce
     ### m_bar
     def m_bar_reduce(self, nodes):
-        msgs = nodes.mailbox['m_mail'][:, -1, :]
+        if self.method == 'last':
+            msgs = nodes.mailbox['m_mail'][:, -1, :]
+        else:
+            msgs = torch.mean(nodes.mailbox['m_mail'], dim=1)
         return {'m_bar': msgs}
 
     ### attention
