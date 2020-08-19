@@ -3,7 +3,8 @@ from Modules import *
 
 class TGNBasic(nn.Module):
     def __init__(self, in_feats_m, in_feats_u, in_feats_v, in_feats_t,
-                 in_feats_e, in_feats_s, out_feats, num_heads, activation, dropout=0.0, use_cuda=False):
+                 in_feats_e, in_feats_s, out_feats, num_heads, activation,
+                 method='last', dropout=0.0, use_cuda=False):
         super(TGNBasic, self).__init__()
         self.in_feats_m = in_feats_m
         self.in_feats_u = in_feats_u
@@ -14,6 +15,7 @@ class TGNBasic(nn.Module):
         self.out_feats = out_feats
         self.num_heads = num_heads
         self.activation = activation
+        self.method= method
         self.dropout = dropout
         self.use_cuda = use_cuda
         # model
@@ -21,7 +23,7 @@ class TGNBasic(nn.Module):
                                            self.in_feats_e, self.in_feats_s, self.out_feats, self.num_heads,
                                            self.activation, self.dropout, self.use_cuda)
         self.evolve_memory = Message(self.in_feats_m, self.in_feats_s, self.in_feats_t,
-                                     self.activation, self.dropout, self.use_cuda)
+                                     self.activation, self.method, self.dropout, self.use_cuda)
 
     def forward(self, g, g_r, g_n, si, sj, sn, e, t, vi, vj, vn):
         return self.compute_emb(g, g_r, g_n, si, sj, sn, e, t, vi, vj, vn)
@@ -32,7 +34,7 @@ class TGNBasic(nn.Module):
 
 class AdvancedTGN(nn.Module):
     def __init__(self, in_feats_u, in_feats_v, in_feats_m, in_feats_t, in_feats_e, in_feats_s, out_feats,
-                 num_heads, activation, dropout=0.0, use_cuda=False):
+                 num_heads, activation, method='last', dropout=0.0, use_cuda=False):
         super(AdvancedTGN, self).__init__()
         self.in_feats_u = in_feats_u
         self.in_feats_v = in_feats_v
@@ -43,13 +45,14 @@ class AdvancedTGN(nn.Module):
         self.out_feats = out_feats
         self.num_heads = num_heads
         self.activation = activation
+        self.method = method
         self.dropout = dropout
         self.use_cuda = use_cuda
         # model
         self.advanced_tgn = MessageNEmbedding(self.in_feats_u, self.in_feats_v, self.in_feats_m, self.in_feats_t,
                                               self.in_feats_e, self.in_feats_s, self.out_feats,
                                               self.num_heads, self.activation,
-                                              self.dropout, self.use_cuda)
+                                              self.method, self.dropout, self.use_cuda)
 
     def forward(self, g, g_r, g_n, si, sj, sn, m_raw, m_raw_r, e, t, vi, vj, vn):
         return self.advanced_tgn.forward(g, g_r, g_n, si, sj, sn, m_raw, m_raw_r, e, t, vi, vj, vn)
