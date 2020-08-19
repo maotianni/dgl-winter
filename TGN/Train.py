@@ -81,7 +81,8 @@ def main(args):
     # model, loss function, optimizer
     model = Model.TGNBasic(in_feats_m, in_feats_u, in_feats_v, in_feats_t,
                            in_feats_e, in_feats_s, out_feats,
-                           num_heads, activation=torch.tanh, dropout=args.dropout, use_cuda=use_cuda)
+                           num_heads, activation=torch.tanh,
+                           method=args.message, dropout=args.dropout, use_cuda=use_cuda)
     if use_cuda:
         model.cuda()
     loss_func = utils.Unsuper_Cross_Entropy()
@@ -200,6 +201,8 @@ def main(args):
                 if epoch > 0 and link_pre_res['AP'] > eval_res['best_eval_ap']:
                     if args.inductive:
                         torch.save(model.state_dict(), 'best_params_inductive_{}.pth'.format(args.dataset))
+                    elif args.message != 'last':
+                        torch.save(model.state_dict(), 'best_params_{}_{}.pth'.format(args.message, args.dataset))
                     else:
                         torch.save(model.state_dict(), 'best_params_{}.pth'.format(args.dataset))
                     eval_res['best_eval_ap'] = link_pre_res['AP']
@@ -234,6 +237,8 @@ def main(args):
                 if epoch > 0 and link_pre_res['AP'] > eval_res['best_test_ap']:
                     if args.inductive:
                         torch.save(model.state_dict(), 'best_params_inductive_{}.pth'.format(args.dataset))
+                    elif args.message != 'last':
+                        torch.save(model.state_dict(), 'best_params_{}_{}.pth'.format(args.message, args.dataset))
                     else:
                         torch.save(model.state_dict(), 'best_params_{}.pth'.format(args.dataset))
                     eval_res['best_test_ap'] = link_pre_res['AP']
@@ -286,6 +291,8 @@ if __name__ == '__main__':
                            help="inductive")
     argparser.add_argument('--learn', type=str, default='None',
                            help='future tasks, Link Prediction or Node Classification')
+    argparser.add_argument('--message', type=str, default='last',
+                           help='reduce function')
     argparser.add_argument('--batch-size', type=int, default=200, help='batch size for training')
     argparser.add_argument('--batch-size-test', type=int, default=200, help='batch size for evaling')
     argparser.add_argument('--num-heads', type=int, default=2, help='Multi Head Attention heads')
