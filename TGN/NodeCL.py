@@ -219,11 +219,13 @@ def main(args):
     # model, loss function, optimizer
     if args.advanced:
         model = Model.AdvancedTGN(in_feats_u, in_feats_v, in_feats_m, in_feats_t, in_feats_e, in_feats_s, out_feats,
-                                  num_heads, activation=torch.tanh, dropout=args.dropout, use_cuda=use_cuda)
+                                  num_heads, activation=torch.tanh, method=args.message,
+                                  dropout=args.dropout, use_cuda=use_cuda)
     else:
         model = Model.TGNBasic(in_feats_m, in_feats_u, in_feats_v, in_feats_t,
                                in_feats_e, in_feats_s, out_feats,
-                               num_heads, activation=torch.tanh, dropout=args.dropout, use_cuda=use_cuda)
+                               num_heads, activation=torch.tanh, method=args.message,
+                               dropout=args.dropout, use_cuda=use_cuda)
     if use_cuda:
         model.cuda()
     nc = utils.GraphNC(out_feats * 2, 80, 10, args.dropout)
@@ -273,6 +275,8 @@ if __name__ == '__main__':
                            help="advanced")
     argparser.add_argument('--learn', type=str, default='None',
                            help='future tasks, Link Prediction or Node Classification')
+    argparser.add_argument('--message', type=str, default='last',
+                           help='reduce function')
     argparser.add_argument('--batch-size', type=int, default=100, help='batch size for training')
     argparser.add_argument('--batch-size-test', type=int, default=100, help='batch size for evaling')
     argparser.add_argument('--num-heads', type=int, default=2, help='Multi Head Attention heads')
@@ -291,3 +295,4 @@ if __name__ == '__main__':
     args = argparser.parse_args()
     print(args)
     main(args)
+
